@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tally</title>
+<style>
+  :root {
+    --bg: #1c1b1a;
+    --panel: #262422;
+    --panel-edge: #34312e;
+    --amber: #e8a33d;
+    --amber-dim: #8a6a34;
+    --text: #ece7e0;
+    --text-dim: #948e86;
+    --danger: #c96b4f;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+  }
+  .wrap { width: 100%; max-width: 420px; }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 0;
+  }
+  .add-btn {
+    background: none;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .add-btn:active { background: rgba(232,163,61,0.12); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 14px;
+    padding: 18px 18px 16px;
+    margin-bottom: 14px;
+  }
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .name {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 500;
+    padding: 2px 0;
+    width: 70%;
+  }
+  .name:focus { outline: none; border-bottom: 1px solid var(--amber-dim); }
+  .del {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 6px;
+  }
+  .del:active { color: var(--danger); }
+
+  .display {
+    font-family: "SF Mono", "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 56px;
+    font-weight: 700;
+    color: var(--amber);
+    text-align: center;
+    letter-spacing: 0.02em;
+    margin: 6px 0 16px;
+    user-select: none;
+  }
+  .controls {
+    display: flex;
+    gap: 10px;
+  }
+  .tap {
+    flex: 1;
+    padding: 18px 0;
+    border-radius: 10px;
+    border: none;
+    font-size: 22px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .plus { background: var(--amber); color: #1c1b1a; }
+  .plus:active { background: #d1922f; }
+  .minus {
+    flex: 0 0 64px;
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    color: var(--text-dim);
+  }
+  .minus:active { border-color: var(--amber-dim); color: var(--text); }
+
+  .empty {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 40px 20px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Tally</h1>
+      <button class="add-btn" onclick="addCounter()">+ New</button>
+    </header>
+    <div id="list"></div>
+  </div>
+
+<script>
+  const STORAGE_KEY = "tally-counters-v1";
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { counters: [{ id: cryptoId(), name: "Counter", count: 0 }] };
+  }
+
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  function cryptoId() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+
+  let state = load();
+
+  function addCounter() {
+    state.counters.push({ id: cryptoId(), name: "Counter", count: 0 });
+    save();
+    render();
+  }
+
+  function removeCounter(id) {
+    state.counters = state.counters.filter(c => c.id !== id);
+    save();
+    render();
+  }
+
+  function change(id, delta) {
+    const c = state.counters.find(c => c.id === id);
+    if (!c) return;
+    c.count = Math.max(0, c.count + delta);
+    save();
+    render();
+  }
+
+  function rename(id, value) {
+    const c = state.counters.find(c => c.id === id);
+    if (!c) return;
+    c.name = value;
+    save();
+  }
+
+  function render() {
+    const list = document.getElementById("list");
+    if (!state.counters.length) {
+      list.innerHTML = `<div class="empty">No counters yet. Tap "+ New" to start one.</div>`;
+      return;
+    }
+    list.innerHTML = state.counters.map(c => `
+      <div class="card">
+        <div class="card-top">
+          <input class="name" value="${escapeHtml(c.name)}"
+            onchange="rename('${c.id}', this.value)" />
+          <button class="del" onclick="removeCounter('${c.id}')">Delete</button>
+        </div>
+        <div class="display">${c.count}</div>
+        <div class="controls">
+          <button class="minus" onclick="change('${c.id}', -1)">−1</button>
+          <button class="tap plus" onclick="change('${c.id}', 1)">Tap +1</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, m => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[m]));
+  }
+
+  render();
+</script>
+</body>
+</html>
