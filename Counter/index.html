@@ -126,6 +126,15 @@
     color: var(--text-dim);
   }
   .minus:active { border-color: var(--amber-dim); color: var(--text); }
+  .controls + .controls { margin-top: 10px; }
+  .extra {
+    padding: 14px 0;
+    font-size: 17px;
+    background: transparent;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+  }
+  .extra:active { background: rgba(232,163,61,0.12); }
 
   .empty {
     text-align: center;
@@ -185,6 +194,16 @@
     render();
   }
 
+  // Shrink long numbers so they fit on narrow screens
+  function displaySize(n) {
+    const len = String(n).length;
+    return len > 7 ? `font-size: min(56px, calc(88vw / ${len * 0.62}))` : "";
+  }
+
+  function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
   function rename(id, value) {
     const c = state.counters.find(c => c.id === id);
     if (!c) return;
@@ -205,10 +224,14 @@
             onchange="rename('${c.id}', this.value)" />
           <button class="del" onclick="removeCounter('${c.id}')">Delete</button>
         </div>
-        <div class="display">${c.count}</div>
+        <div class="display" style="${displaySize(c.count)}">${c.count}</div>
         <div class="controls">
           <button class="minus" onclick="change('${c.id}', -1)">−1</button>
           <button class="tap plus" onclick="change('${c.id}', 1)">Tap +1</button>
+        </div>
+        <div class="controls">
+          <button class="tap extra" onclick="change('${c.id}', 10)">+10</button>
+          <button class="tap extra" onclick="change('${c.id}', randomInt(1, 1000000))">+Random</button>
         </div>
       </div>
     `).join("");
