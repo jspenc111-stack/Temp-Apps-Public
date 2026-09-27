@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#2a1c14">
+  <meta name="description" content="A virtual fishbowl. Add fish, feed them, don't overdo it.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Fishbowl">
+  <title>Fishbowl</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="scene" aria-label="Fishbowl. Tap a fish to see its details, tap the water to startle the fish."></canvas>
+
+  <header class="hud">
+    <div class="count" id="count" aria-live="polite">0 / 10 fish</div>
+  </header>
+
+  <div class="info" id="info" hidden>
+    <button class="info-close" id="infoClose" aria-label="Close">&times;</button>
+    <div class="info-head">
+      <span class="swatch" id="infoSwatch"></span>
+      <div>
+        <div class="info-name" id="infoName"></div>
+        <div class="info-sub" id="infoSub"></div>
+      </div>
+    </div>
+    <div class="meter-label"><span>Fullness</span><span id="infoPct"></span></div>
+    <div class="meter"><div class="meter-fill" id="infoBar"></div><div class="meter-danger"></div></div>
+    <div class="info-mood" id="infoMood"></div>
+    <div class="meals" id="infoMeals"></div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <footer class="controls">
+    <div class="full-msg" id="fullMsg" hidden>Bowl is full.</div>
+    <div class="buttons">
+      <button class="btn" id="addBtn"><span class="btn-icon">🐟</span>Add fish</button>
+      <button class="btn btn-feed" id="feedBtn"><span class="btn-icon">🍤</span>Feed</button>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
