@@ -1,1 +1,997 @@
-hu
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Row Tracker</title>
+<meta name="theme-color" content="#9C3F5D">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<style>
+  :root{
+    --bg:#DCD3C3; --card:#F1EAD9; --card-dim:#E4DAC5; --line:#CFC4AF; --text:#2E2A24; --text-dim:#6F6759;
+    --accent:#9C3F5D; --accent-ink:#FFFFFF; --accent2:#56735E;
+    --y0:#9C3F5D; --y1:#56735E; --y2:#B07F2E; --y3:#4F6788; --y4:#7A5476;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#211C18; --card:#2E2823; --card-dim:#27211C; --line:#3E362F; --text:#EDE6DA; --text-dim:#A89E8F;
+      --accent:#E08AA4; --accent-ink:#2A1119; --accent2:#9FC2A5;
+      --y0:#E08AA4; --y1:#9FC2A5; --y2:#E0B869; --y3:#94AED3; --y4:#C79BC0;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#211C18; --card:#2E2823; --card-dim:#27211C; --line:#3E362F; --text:#EDE6DA; --text-dim:#A89E8F;
+    --accent:#E08AA4; --accent-ink:#2A1119; --accent2:#9FC2A5;
+    --y0:#E08AA4; --y1:#9FC2A5; --y2:#E0B869; --y3:#94AED3; --y4:#C79BC0;
+  }
+  *{box-sizing:inherit;}
+  html,body{height:100%;margin:0;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    padding:22px 18px 28px;
+  }
+  .wrap{width:100%; max-width:440px;}
+  h1{font-family:ui-serif,Georgia,"Times New Roman",serif; font-weight:600; font-size:1.55rem; margin:0 0 4px;}
+  h2{font-family:ui-serif,Georgia,"Times New Roman",serif; font-weight:600; font-size:1.25rem; margin:0 0 6px;}
+  .muted{color:var(--text-dim); font-size:.92rem; line-height:1.45; margin:0 0 16px;}
+  .hidden{display:none !important;}
+  button{font-family:inherit;}
+  button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible{outline:3px solid var(--accent2); outline-offset:2px;}
+  .btn{display:block; width:100%; padding:15px; margin-top:10px; border:none; border-radius:14px; font-size:1.05rem; font-weight:600; cursor:pointer;}
+  .btn:disabled{opacity:.45; cursor:default;}
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-secondary{background:transparent; color:var(--text); border:1.5px solid var(--line);}
+  .btn-text{background:none; border:none; color:var(--text-dim); font-size:.9rem; padding:10px 4px; cursor:pointer; text-decoration:underline; text-underline-offset:3px;}
+  textarea, input[type=text]{
+    width:100%; padding:13px; border-radius:12px; border:1px solid var(--line);
+    background:var(--card); color:var(--text); font-size:1rem; line-height:1.5; font-family:inherit;
+  }
+  textarea{min-height:190px; resize:vertical;}
+  label.small{display:block; font-size:.88rem; color:var(--text-dim); margin:14px 0 6px;}
+  .or{color:var(--text-dim); font-size:.85rem; text-align:center; margin:14px 0 8px;}
+  .status{font-size:.92rem; line-height:1.45; margin:12px 0 0; padding:12px 14px; border-radius:12px; background:var(--card-dim);}
+  .status.busy::before{content:""; display:inline-block; width:10px; height:10px; margin-right:8px; border-radius:50%; background:var(--accent); vertical-align:middle; animation:pulse 1s ease-in-out infinite alternate;}
+  @keyframes pulse{from{opacity:.25}to{opacity:1}}
+
+  /* Review */
+  details.sec{background:var(--card); border-radius:14px; margin-bottom:10px; overflow:hidden;}
+  details.sec summary{padding:14px 16px; cursor:pointer; list-style:none; display:flex; align-items:center; gap:10px;}
+  details.sec summary::-webkit-details-marker{display:none;}
+  .swatchdot{width:14px; height:14px; border-radius:4px; flex:none;}
+  .sec-name{font-weight:600; flex:1;}
+  .sec-count{color:var(--text-dim); font-size:.88rem;}
+  .blk{padding:0 16px 12px;}
+  .blk-head{font-size:.82rem; color:var(--text-dim); margin:8px 0 4px; font-weight:600;}
+  .blk-row{font-size:.92rem; line-height:1.4; padding:6px 0; border-top:1px solid var(--line); display:flex; gap:10px;}
+  .blk-row .lab{flex:none; width:64px; color:var(--text-dim); font-size:.82rem; padding-top:2px;}
+  .blk-row .st{color:var(--accent2); font-size:.82rem; white-space:nowrap;}
+
+  /* Tracker */
+  .topbar{display:flex; align-items:baseline; justify-content:space-between; gap:12px;}
+  .topbar h1{font-size:1.2rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .sec-line{display:flex; align-items:center; gap:8px; font-size:.95rem; margin:2px 0 10px;}
+  .sec-line strong{font-weight:600;}
+  .sec-line span{color:var(--text-dim); font-size:.85rem;}
+  .swatch{display:block; width:100%; height:auto; margin:0 auto; }
+  .swatch-wrap{background:var(--card); border-radius:18px; padding:14px 12px 10px;}
+  .overall{display:flex; gap:3px; height:10px; margin:12px 2px 4px;}
+  .overall .seg{background:var(--card-dim); border-radius:5px; overflow:hidden; position:relative; min-width:6px; cursor:pointer; border:none; padding:0;}
+  .overall .seg i{position:absolute; left:0; top:0; bottom:0; display:block;}
+  .overall-label{display:flex; justify-content:space-between; font-size:.8rem; color:var(--text-dim); margin:0 2px;}
+
+  .rowcard{background:var(--card); border-radius:18px; padding:16px 18px; margin-top:14px; border-left:6px solid var(--accent);}
+  .row-head{display:flex; justify-content:space-between; align-items:baseline; gap:8px;}
+  .row-num{font-family:ui-serif,Georgia,serif; font-size:1.7rem; font-weight:600;}
+  .row-num small{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:.85rem; font-weight:600; color:var(--text-dim); margin-left:6px;}
+  .pill{font-size:.78rem; font-weight:600; padding:4px 9px; border-radius:999px; background:var(--card-dim); color:var(--text); white-space:nowrap;}
+  .row-text{font-size:1.2rem; line-height:1.5; margin:10px 0 6px; overflow-wrap:anywhere;}
+  .row-end{font-size:.9rem; color:var(--accent2); font-weight:600;}
+  .loopnote{margin-top:10px; font-size:.9rem; padding:10px 12px; border-radius:10px; background:var(--card-dim); line-height:1.4;}
+
+  .stitches{display:flex; gap:10px; margin-top:12px;}
+  .stitch-plus{flex:1; margin:0; padding:14px; border-radius:14px; border:1.5px dashed var(--accent); background:transparent; color:var(--text); cursor:pointer; text-align:left;}
+  .stitch-plus b{font-size:1.4rem; display:block;}
+  .stitch-plus span{font-size:.82rem; color:var(--text-dim);}
+  .stitch-minus{width:64px; margin:0; border-radius:14px; border:1.5px solid var(--line); background:transparent; color:var(--text); font-size:1.4rem; cursor:pointer;}
+  .nav{display:flex; gap:10px; margin-top:12px;}
+  .nav .btn{margin-top:0;}
+  .nav .back{flex:0 0 34%;}
+  .upnext{font-size:.88rem; color:var(--text-dim); margin-top:14px; line-height:1.4;}
+  .upnext b{color:var(--text); font-weight:600;}
+  .footer{display:flex; justify-content:space-between; flex-wrap:wrap; margin-top:14px; border-top:1px solid var(--line); padding-top:6px;}
+
+  .sheet-bg{position:fixed; inset:0; background:rgba(20,15,12,.45); display:flex; align-items:flex-end; justify-content:center; z-index:10;}
+  .sheet{background:var(--bg); width:100%; max-width:480px; max-height:80%; overflow:auto; border-radius:20px 20px 0 0; padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));}
+  .sec-item{display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:var(--card); border:none; border-radius:12px; padding:13px 14px; margin-bottom:8px; color:var(--text); font-size:1rem; cursor:pointer;}
+  .sec-item.here{outline:2px solid var(--accent);}
+  .sec-item .bar{flex:0 0 70px; height:6px; background:var(--card-dim); border-radius:3px; overflow:hidden;}
+  .sec-item .bar i{display:block; height:100%;}
+
+  @keyframes knitIn{from{opacity:0; transform:translateY(-6px);}to{opacity:1; transform:none;}}
+  .fresh{animation:knitIn .45s ease-out;}
+  @media (prefers-reduced-motion: reduce){ .fresh, .status.busy::before{animation:none;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ SETUP ============ -->
+  <section id="setup">
+    <h1>Row Tracker</h1>
+    <p class="muted">Add your pattern and it gets split into sections and rows you can tick through while you knit or crochet.</p>
+    <button class="btn btn-secondary" id="pdfBtn" style="margin-top:0">Upload a PDF pattern</button>
+    <input type="file" id="pdfInput" accept="application/pdf,.pdf" class="hidden">
+    <p class="or">or paste the pattern text</p>
+    <textarea id="patternInput" placeholder="Paste the whole pattern here. It doesn't need tidying first."></textarea>
+    <label class="small" for="sizeInput">Size you're making (optional, e.g. "M" or "2nd size")</label>
+    <input type="text" id="sizeInput" autocomplete="off">
+    <p class="status hidden" id="setupStatus" aria-live="polite"></p>
+    <button class="btn btn-primary" id="readBtn">Read my pattern</button>
+    <button class="btn btn-secondary hidden" id="cancelBtn">Stop reading</button>
+    <button class="btn-text" id="counterBtn" style="margin-top:10px">No pattern? Just count rows</button>
+  </section>
+
+  <!-- ============ REVIEW ============ -->
+  <section id="review" class="hidden">
+    <h2 id="reviewTitle">Here's what I found</h2>
+    <p class="muted" id="reviewSummary"></p>
+    <div id="reviewList"></div>
+    <button class="btn btn-primary" id="startBtn">Start knitting</button>
+    <button class="btn btn-secondary" id="backToEditBtn">Edit the pattern text</button>
+  </section>
+
+  <!-- ============ TRACKER ============ -->
+  <section id="tracker" class="hidden">
+    <div class="topbar">
+      <h1 id="trTitle">Row Tracker</h1>
+      <button class="btn-text" id="sectionsBtn">Sections</button>
+    </div>
+    <div class="sec-line" id="secLine"></div>
+    <div class="swatch-wrap">
+      <svg class="swatch" id="swatch" viewBox="0 0 320 180" role="img" aria-label="Your knitting so far"></svg>
+      <div class="overall" id="overall"></div>
+      <div class="overall-label"><span id="overallLeft"></span><span id="overallRight"></span></div>
+    </div>
+
+    <div class="rowcard" id="rowcard">
+      <div class="row-head">
+        <div class="row-num" id="rowNum"></div>
+        <div class="pill hidden" id="repPill"></div>
+      </div>
+      <div class="row-text" id="rowText"></div>
+      <div class="row-end hidden" id="rowEnd"></div>
+      <div class="loopnote hidden" id="loopNote"></div>
+    </div>
+
+    <div class="stitches" id="stitchBox">
+      <button class="stitch-minus" id="stMinus" aria-label="Remove one stitch">−</button>
+      <button class="stitch-plus" id="stPlus"><b id="stCount">0</b><span id="stLabel">Tap for each stitch (optional)</span></button>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-secondary back" id="backBtn">Back</button>
+      <button class="btn btn-primary" id="nextBtn">Row done</button>
+    </div>
+    <button class="btn btn-secondary hidden" id="moveOnBtn">Reached it, move on</button>
+    <p class="upnext" id="upNext"></p>
+
+    <div class="footer">
+      <button class="btn-text" id="wakeBtn">Keep screen on</button>
+      <button class="btn-text" id="editBtn">Edit pattern</button>
+      <button class="btn-text" id="resetBtn">Start over</button>
+    </div>
+  </section>
+</div>
+
+<div class="sheet-bg hidden" id="sheet">
+  <div class="sheet" role="dialog" aria-label="Sections">
+    <h2>Sections</h2>
+    <p class="muted" style="margin-bottom:12px">Tap one to jump to its start.</p>
+    <div id="sheetList"></div>
+    <button class="btn btn-secondary" id="sheetClose">Close</button>
+  </div>
+</div>
+
+<script>
+// ===== Pattern parsing: shared by the AI path and the offline "basic rules" path =====
+var Parser = (function(){
+  var NUM_WORDS = {once:1, twice:2, thrice:3, one:1, two:2, three:3, four:4, five:5, six:6, seven:7,
+    eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, twenty:20};
+  var ROW_RE = /^\s*(rows?|rnds?|rounds?|r)\s*\.?\s*(\d+)(?:\s*(?:-|–|—|to|through|thru)\s*(\d+))?\s*(?:[\(\[]\s*(rs|ws|right side|wrong side)\s*[\)\]])?\s*[:.\-–—]?\s*(.*)$/i;
+  var SKIP_HEADERS = /^(materials?|supplies|yarn|needles?|hooks?|notions|gauge|tension|abbreviations?|stitch guide|special stitches|notes?|pattern notes|sizes?|finished (size|measurements?)|measurements?|copyright|designer|difficulty|skill level|about)\b/i;
+  var SECTION_WORDS = /\b(rib(bing)?|cuff|body|sleeves?|yoke|brim|crown|heel( flap| turn)?|toe|gusset|foot|leg|back|front|collar|neck(band)?|border|edging|hood|pocket|strap|handle|base|sides?|top|bottom|panel|part|section|set[- ]?up|shaping|decreases?|increases?|main pattern|pattern|instructions|directions|finishing|assembly)\b/i;
+  var STEP_WORDS = /\b(cast on|co\b|bind off|bo\b|cast off|join|change to|switch to|place marker|pm\b|turn\b|fasten off|slip|sl\b|work|knit|purl|k\d|p\d|k2tog|ssk|ch\s*\d|chain|sc\b|dc\b|hdc\b|tr\b|sl st|inc|dec|repeat|rep\b|pick up|block|sew|seam|weave in|break yarn|cut yarn)\b/i;
+
+  function numFromWord(w){
+    if (!w) return null;
+    w = String(w).toLowerCase();
+    if (/^\d+$/.test(w)) return parseInt(w, 10);
+    return NUM_WORDS[w] || null;
+  }
+
+  // Pull a stated stitch count off the end of a row, e.g. "(48 sts)", "— 48 stitches", "[12 sc]", "(12)"
+  function extractStitches(text){
+    var m = text.match(/[\(\[]\s*(\d+)\s*(?:sts?|stitches|sc|dc|hdc|tr|loops?)?\s*(?:total|remain(?:ing)?|on needle)?\s*[\)\]]\s*\.?\s*$/i)
+         || text.match(/[-–—=:]\s*(\d+)\s*(?:sts?|stitches)\s*(?:total|remain(?:ing)?)?\s*\.?\s*$/i)
+         || text.match(/\b(\d+)\s*(?:sts?|stitches)\s+(?:remain|total)\s*\.?\s*$/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function normSide(s){
+    if (!s) return null;
+    s = s.toLowerCase();
+    if (s === 'rs' || s === 'right side') return 'RS';
+    if (s === 'ws' || s === 'wrong side') return 'WS';
+    return null;
+  }
+
+  function looksLikeHeader(line){
+    if (line.length > 45) return false;
+    if (ROW_RE.test(line)) return false;
+    var bare = line.replace(/[:#*_]+$/,'').replace(/^[#*_\s]+/,'').trim();
+    if (!bare) return false;
+    if (/[.;]$/.test(line)) return false;           // sentences end with a full stop
+    if (!/:$/.test(line) && /^(cast on|co|bind off|bo|cast off|knit|purl|work|join|k\d|p\d|ch|sc|rep)\b/i.test(bare)) return false;
+    if (SKIP_HEADERS.test(bare)) return true;
+    if (/:$/.test(line)) return true;
+    if (bare === bare.toUpperCase() && /[A-Z]{3,}/.test(bare)) return true;
+    if (SECTION_WORDS.test(bare) && bare.split(/\s+/).length <= 5 && !/\d+\s*(sts|stitches)/i.test(bare)) return true;
+    return false;
+  }
+
+  // ---- Basic-rules text parser (works offline, no AI) ----
+  function parseText(raw){
+    var lines = String(raw || '').replace(/\r/g,'').split('\n').map(function(l){ return l.replace(/\s+/g,' ').trim(); });
+    var plan = { title: null, sections: [] };
+    var sec = null, skipping = false, lastItem = null, sawContent = false;
+    var rowMap = {};  // row number -> row object, within current section
+    var definedRows = [];
+
+    function newSection(name){
+      sec = { name: name, firstRow: null, blocks: [] };
+      plan.sections.push(sec); rowMap = {}; definedRows = []; lastItem = null;
+    }
+    function ensureSection(){ if (!sec) newSection('Pattern'); }
+    function addBlock(rows, times, until){
+      ensureSection();
+      var b = { rows: rows, times: times || 1, until: until || null };
+      sec.blocks.push(b); lastItem = b; sawContent = true;
+      return b;
+    }
+
+    for (var i = 0; i < lines.length; i++){
+      var line = lines[i];
+      if (!line) { lastItem = lastItem && lastItem._open ? lastItem : null; continue; }
+
+      var m = line.match(ROW_RE);
+      if (m){
+        skipping = false;
+        var a = parseInt(m[2], 10), b = m[3] ? parseInt(m[3], 10) : a;
+        if (b < a) b = a;
+        var side = normSide(m[4]);
+        var body = (m[5] || '').trim();
+        ensureSection();
+        if (sec.firstRow === null) sec.firstRow = a;
+        var span = b - a + 1;
+
+        // "Rows 3-10: Rep rows 1-2" / "Row 5: rep row 3" / "... until ..."
+        var rep = body.match(/^rep(?:eat)?\s+rows?\s+(\d+)(?:\s*(?:-|–|—|to|and|&)\s*(\d+))?(.*)$/i);
+        if (rep){
+          var ra = parseInt(rep[1],10), rb = rep[2] ? parseInt(rep[2],10) : ra;
+          var ref = [];
+          for (var r = ra; r <= rb; r++) if (rowMap[r]) ref.push(copyRow(rowMap[r]));
+          if (ref.length){
+            var untilM = rep[3].match(/until\s+(.*)$/i);
+            var times = Math.max(1, Math.round(span / ref.length));
+            var blk = addBlock(ref, times, untilM ? untilM[1].replace(/\.$/,'') : null);
+            registerRows(a, blk);
+            continue;
+          }
+        }
+        var row = { kind: 'row', text: body || line, stitches: extractStitches(body), side: side };
+        var blk2 = addBlock([row], span, null);
+        blk2._open = true;
+        registerRows(a, blk2);
+        continue;
+      }
+
+      // Stand-alone repeat lines: "Rep rows 1-2 four more times", "Repeat last 2 rows until piece measures 20 cm"
+      var rep2 = line.match(/^rep(?:eat)?\s+(?:(?:rows?|rounds?|rnds?)\s+(\d+)(?:\s*(?:-|–|—|to|and|&)\s*(\d+))?|(?:the\s+)?last\s+(?:(\w+)\s+)?(?:rows?|rounds?|rnds?))\s*(.*)$/i);
+      if (rep2 && sec && !skipping){
+        var ref2 = [];
+        if (rep2[1]){
+          var x = parseInt(rep2[1],10), y = rep2[2] ? parseInt(rep2[2],10) : x;
+          for (var q = x; q <= y; q++) if (rowMap[q]) ref2.push(copyRow(rowMap[q]));
+        } else {
+          var n = numFromWord(rep2[3]) || 1;
+          ref2 = definedRows.slice(-n).map(copyRow);
+        }
+        var rest = rep2[4] || '';
+        var untilM2 = rest.match(/until\s+(.*)$/i);
+        var tm = rest.match(/(\w+)\s+(?:more\s+)?times?\b/i);
+        var onceM = rest.match(/\b(once|twice|thrice)\b/i);
+        var t2 = untilM2 ? 1 : (onceM ? numFromWord(onceM[1]) : (tm ? numFromWord(tm[1]) : 1));
+        if (ref2.length){
+          var b3 = addBlock(ref2, t2 || 1, untilM2 ? untilM2[1].replace(/\.$/,'') : null);
+          registerRows(null, b3);
+          continue;
+        }
+      }
+
+      if (!plan.title && !sawContent && !sec && i === firstNonBlank(lines) && line.length <= 60 &&
+          !ROW_RE.test(nextNonBlank(lines, i) || '') && !SKIP_HEADERS.test(line) && !STEP_WORDS.test(line)){
+        plan.title = titleCase(line.replace(/[:#*_]+$/,'').replace(/^[#*_\s]+/,'')); continue;
+      }
+      // A short first line sitting right above the rows is that block's name.
+      if (!sec && !sawContent && i === firstNonBlank(lines) && line.length <= 45 && !ROW_RE.test(line) &&
+          ROW_RE.test(nextNonBlank(lines, i) || '') && !STEP_WORDS.test(line)){
+        newSection(titleCase(line.replace(/[:#*_]+$/,'').trim())); continue;
+      }
+
+      if (looksLikeHeader(line)){
+        var name = line.replace(/[:#*_]+$/,'').replace(/^[#*_\s]+/,'').trim();
+        skipping = SKIP_HEADERS.test(name);
+        if (!skipping) newSection(titleCase(name));
+        else { sec = null; lastItem = null; }
+        continue;
+      }
+
+      if (skipping) continue;
+
+      // PDF line-wrap: a row broken across two lines. Glue continuation onto previous row.
+      if (lastItem && lastItem._open && lastItem.rows.length === 1 &&
+          ((lastItem.rows[0].kind === 'row' && /^[a-z0-9(,*;\[]/.test(line)) || /(,|;|\*|\bto|\band|\bfrom|\bin|\bof)$/i.test(lastItem.rows[0].text))){
+        var prev = lastItem.rows[0];
+        prev.text = (prev.text + ' ' + line).trim();
+        if (prev.stitches === null) prev.stitches = extractStitches(prev.text);
+        continue;
+      }
+
+      var forM = line.match(/^(.*?)\s*,?\s*for\s+(?:the\s+next\s+)?(\d+|\w+)\s+(?:more\s+)?(rows?|rounds?|rnds?)\b\.?\s*(.*)$/i);
+      if (forM && STEP_WORDS.test(forM[1]) && numFromWord(forM[2])){
+        addBlock([{ kind: 'row', text: line, stitches: extractStitches(line), side: null }], numFromWord(forM[2]), null);
+        continue;
+      }
+      var untilM3 = line.match(/^(.*?)\s*,?\s*until\s+(.+?)\.?$/i);
+      if (untilM3 && STEP_WORDS.test(untilM3[1])){
+        addBlock([{ kind: 'row', text: untilM3[1], stitches: null, side: null }], 1, untilM3[2]);
+        continue;
+      }
+
+      if (STEP_WORDS.test(line)){
+        var st = { kind: 'step', text: line, stitches: extractStitches(line), side: null };
+        var b4 = addBlock([st], 1, null);
+        b4._open = !/[.)\]]$/.test(line);
+        continue;
+      }
+      // Anything else (descriptive prose) is ignored.
+    }
+
+    function registerRows(startNum, blk){
+      var n = startNum;
+      for (var t = 0; t < (blk.until ? 1 : blk.times); t++){
+        blk.rows.forEach(function(r){
+          if (r.kind !== 'row') return;
+          if (n !== null){ rowMap[n] = r; n++; }
+          definedRows.push(r);
+        });
+      }
+    }
+
+    plan.sections = plan.sections.filter(function(s){ return s.blocks.length; });
+    plan.sections.forEach(function(s){ s.blocks.forEach(function(b){ delete b._open; }); });
+    return plan;
+  }
+
+  function firstNonBlank(lines){ for (var j = 0; j < lines.length; j++) if (lines[j]) return j; return -1; }
+  function nextNonBlank(lines, i){ for (var j = i + 1; j < lines.length; j++) if (lines[j]) return lines[j]; return null; }
+  function copyRow(r){ return { kind: r.kind, text: r.text, stitches: r.stitches, side: r.side }; }
+  function titleCase(s){
+    if (s !== s.toUpperCase()) return s;
+    return s.toLowerCase().replace(/\b\w/g, function(c){ return c.toUpperCase(); });
+  }
+
+  // ---- Validate/clean a plan (from AI or rules) so the tracker can trust it ----
+  function clean(plan){
+    if (!plan || !Array.isArray(plan.sections)) return null;
+    var out = { title: typeof plan.title === 'string' && plan.title.trim() ? plan.title.trim().slice(0, 80) : null, sections: [] };
+    plan.sections.forEach(function(s){
+      if (!s || !Array.isArray(s.blocks)) return;
+      var sec = { name: String(s.name || 'Section').slice(0, 60), firstRow: parseInt(s.firstRow, 10) > 0 ? parseInt(s.firstRow, 10) : 1, blocks: [] };
+      s.blocks.forEach(function(b){
+        if (!b || !Array.isArray(b.rows)) return;
+        var rows = b.rows.map(function(r){
+          if (typeof r === 'string') r = { text: r };
+          if (!r || !String(r.text || '').trim()) return null;
+          var st = parseInt(r.stitches, 10);
+          return { kind: r.kind === 'step' ? 'step' : 'row', text: String(r.text).trim(),
+                   stitches: st > 0 ? st : null, side: normSide(r.side) };
+        }).filter(Boolean);
+        if (!rows.length) return;
+        var times = Math.min(500, Math.max(1, parseInt(b.times, 10) || 1));
+        var until = b.until && String(b.until).trim() ? String(b.until).trim() : null;
+        sec.blocks.push({ rows: rows, times: until ? 1 : times, until: until });
+      });
+      if (sec.blocks.length) out.sections.push(sec);
+    });
+    return out.sections.length ? out : null;
+  }
+
+  // ---- Expand blocks into a flat list of steps the tracker walks through ----
+  function expand(plan){
+    var steps = [], sections = [];
+    plan.sections.forEach(function(s, si){
+      var start = steps.length, rowNo = s.firstRow || 1;
+      s.blocks.forEach(function(b){
+        if (b.until){
+          var loopStart = steps.length, loopRows = 0;
+          b.rows.forEach(function(r){
+            steps.push(mkStep(si, r, r.kind === 'row' ? rowNo++ : null, 1, 1));
+            if (r.kind === 'row') loopRows++;
+          });
+          var loop = { start: loopStart, end: steps.length - 1, until: b.until, rows: loopRows };
+          for (var k = loopStart; k < steps.length; k++) steps[k].loop = loop;
+        } else {
+          for (var t = 1; t <= b.times; t++){
+            b.rows.forEach(function(r){
+              steps.push(mkStep(si, r, r.kind === 'row' ? rowNo++ : null, t, b.times));
+            });
+          }
+        }
+      });
+      sections.push({ name: s.name, start: start, end: steps.length - 1 });
+    });
+    return { title: plan.title, sections: sections, steps: steps };
+  }
+  function mkStep(si, r, rowNo, rep, reps){
+    return { sec: si, kind: r.kind, row: rowNo, text: r.text, stitches: r.stitches, side: r.side, rep: rep, reps: reps, loop: null };
+  }
+
+  // ---- PDF: rebuild readable lines from positioned text fragments (handles 2-column pages) ----
+  function linesFromItems(items, pageWidth){
+    items = items.filter(function(it){ return it.str && it.str.trim(); });
+    if (!items.length) return [];
+    var mid = pageWidth / 2;
+    var crossing = items.filter(function(it){ return it.x < mid - 5 && it.x + (it.w || 0) > mid + 5; }).length;
+    var left = items.filter(function(it){ return it.x < mid; });
+    var right = items.filter(function(it){ return it.x >= mid; });
+    var twoCol = crossing <= items.length * 0.05 && left.length > items.length * 0.2 && right.length > items.length * 0.2;
+    var groups = twoCol ? [left, right] : [items];
+    var out = [];
+    groups.forEach(function(g){
+      g = g.slice().sort(function(a, b){ return (b.y - a.y) || (a.x - b.x); });
+      var cur = null;
+      g.forEach(function(it){
+        if (cur && Math.abs(cur.y - it.y) <= 3){ cur.parts.push(it); }
+        else { cur = { y: it.y, parts: [it] }; out.push(cur); }
+      });
+    });
+    return out.map(function(l){
+      return l.parts.sort(function(a, b){ return a.x - b.x; }).map(function(p){ return p.str; }).join(' ').replace(/\s+/g, ' ').trim();
+    }).filter(Boolean);
+  }
+
+  return { parseText: parseText, clean: clean, expand: expand, linesFromItems: linesFromItems, extractStitches: extractStitches };
+})();
+
+(function(){
+  // ---------- Offline support: register the service worker ----------
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', function(){ navigator.serviceWorker.register('./sw.js').catch(function(){}); });
+  }
+
+  var $ = function(id){ return document.getElementById(id); };
+  var KEY = 'row-tracker-v2';
+  var YARN = ['var(--y0)','var(--y1)','var(--y2)','var(--y3)','var(--y4)'];
+  var state = null, ex = null;   // ex = expanded plan (sections + steps)
+
+  function load(){ try{ var r = localStorage.getItem(KEY); return r ? JSON.parse(r) : null; } catch(e){ return null; } }
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){} }
+  function buzz(ms){ try{ if (navigator.vibrate) navigator.vibrate(ms); } catch(e){} }
+  function show(id){ ['setup','review','tracker'].forEach(function(s){ $(s).classList.toggle('hidden', s !== id); }); window.scrollTo(0,0); }
+  function setStatus(msg, busy){ var el = $('setupStatus'); el.textContent = msg || ''; el.classList.toggle('hidden', !msg); el.classList.toggle('busy', !!busy); }
+
+  // ================= READING THE PATTERN =================
+  var PROMPT = [
+    'You turn a knitting or crochet pattern into structured data for a row-by-row tracker app.',
+    '',
+    'Reply with ONLY a JSON object of this shape:',
+    '{"title": string or null, "sections": [ {"name": string, "firstRow": number, "blocks": [ {"rows": [ {"kind": "row" or "step", "text": string, "stitches": number or null, "side": "RS" or "WS" or null} ], "times": number, "until": string or null} ] } ] }',
+    '',
+    'Rules:',
+    '- Sections are the named parts of the pattern in working order (e.g. Brim, Body, Crown, Sleeves, Heel). If there are no named parts use one section called "Pattern". Use short names.',
+    '- kind "row" = a row or round that gets worked. kind "step" = a one-off action that is not a row (cast on, join in the round, change needles, place markers, bind off, fasten off, sew, weave in).',
+    '- A block is a group of rows worked in order, "times" times in total. Express repeats with blocks rather than writing them out. "Rows 3-20: rep rows 1-2" = one block holding row 1 and row 2\'s instructions with times 9. "Rows 1-10: k2, p2 rib" = one block with one row and times 10. "Rep rows 1-2 four more times" = a block of those two rows with times 4.',
+    '- When rows repeat until a measurement or condition ("until piece measures 20 cm from cast on"), use a block with times 1 and put the condition in "until".',
+    '- "text" is the instruction for that one row, in the pattern\'s own words and abbreviations, without the "Row 5:" label. Replace references like "rep row 3" with row 3\'s actual instruction. For "Row 1 and all RS rows: knit; all WS rows: purl" write out the alternating pair of rows as a block.',
+    '- "stitches" is the stitch count at the END of the row, only when the pattern states it (e.g. "(48 sts)", "- 64 sts", crochet "(12)"). Otherwise null. Do not calculate counts yourself.',
+    '- "side": "RS" or "WS" only if stated.',
+    '- "firstRow": the number the pattern gives the first row of that section (numbering often continues across sections); 1 if unnumbered.',
+    '- Leave out materials, yarn, gauge, size tables, abbreviation lists, general notes, photo captions, designer and copyright text. Keep real finishing steps as steps.',
+    '- If a part is only given as a chart, add one step like "Work Chart A rows 1-12 (see chart in pattern)".',
+    '- Undo line breaks and hyphenation from PDF copying, and ignore page headers, footers and page numbers.',
+    '- SIZE_RULE'
+  ].join('\n');
+
+  function sizeRule(size){
+    return size
+      ? 'The maker is making size "' + size + '". Where the pattern gives several sizes (e.g. "CO 80 (88, 96) sts"), use only this size\'s numbers everywhere: in text, stitch counts and repeat counts.'
+      : 'If the pattern gives several sizes (e.g. "CO 80 (88, 96) sts"), keep all the numbers exactly as written and set "stitches" to null where the count depends on size.';
+  }
+
+  var sampleFn = null, readCtl = null;
+  async function getSample(){
+    if (sampleFn) return sampleFn;
+    try{ if (window.claude && window.claude.use) sampleFn = await window.claude.use('sample'); } catch(e){ sampleFn = null; }
+    return sampleFn;
+  }
+
+  async function readWithAI(text, images){
+    var sample = await getSample();
+    if (!sample) return { plan: null, why: 'unavailable' };
+    var size = $('sizeInput').value.trim();
+    var prompt = PROMPT.replace('SIZE_RULE', sizeRule(size)) + '\n\n' +
+      (images ? 'The pattern is in the attached page images (a scanned PDF). Read it from the images.' : 'Pattern text:\n' + text.slice(0, 45000));
+    readCtl = new AbortController();
+    var opts = { signal: readCtl.signal };
+    if (images) opts.images = images;
+    try{
+      var data = await sample.json(prompt, opts);
+      return { plan: Parser.clean(data), why: 'ok' };
+    } catch(err){
+      var code = err && err.code;
+      if (code === 'cancelled') return { plan: null, why: 'cancelled' };
+      if (code === 'not_granted' || code === 'sampling_disabled' || code === 'capability_disabled' || code === 'not_declared' || code === 'capability_removed') { sampleFn = null; return { plan: null, why: 'unavailable' }; }
+      if (code === 'rate_limited') return { plan: null, why: 'busy' };
+      if (code === 'prompt_too_large') return { plan: null, why: 'toolong' };
+      return { plan: null, why: 'failed' };
+    } finally { readCtl = null; }
+  }
+
+  async function readPattern(text, images){
+    $('readBtn').disabled = true; $('cancelBtn').classList.remove('hidden');
+    setStatus('Reading your pattern. Longer patterns can take up to a minute.', true);
+    var res = await readWithAI(text, images);
+    $('readBtn').disabled = false; $('cancelBtn').classList.add('hidden');
+    if (res.why === 'cancelled'){ setStatus('Stopped.'); return; }
+
+    var plan = res.plan, method = 'ai';
+    if (!plan && text && text.trim()){
+      plan = Parser.clean(Parser.parseText(text)); method = 'rules';
+    }
+    if (!plan){
+      setStatus(images
+        ? "This PDF is a scanned picture, and picture reading isn't available here. Type or paste the pattern text instead."
+        : "Couldn't find any rows in that. Check the text has the row instructions in it, or use the plain row counter.");
+      return;
+    }
+    var note = method === 'ai' ? '' :
+      ({ unavailable: 'Read with the built-in rules.',
+         busy: 'Smart reading is busy right now, so basic rules were used.',
+         toolong: 'That pattern is too long for smart reading, so basic rules were used.',
+         failed: 'Smart reading didn\'t work this time, so basic rules were used.' })[res.why] + ' Check it closely before you start.';
+    setStatus('');
+    state = { v: 2, mode: 'pattern', plan: plan, raw: text || '', size: $('sizeInput').value.trim(), method: method, note: note,
+              index: 0, loops: {}, stitch: 0, done: false };
+    ex = Parser.expand(plan);
+    save();
+    renderReview();
+    show('review');
+  }
+
+  // ---------- PDF ----------
+  var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/';
+  function loadScript(src){ return new Promise(function(res, rej){ var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+  async function ensurePdfJs(){
+    if (window.pdfjsLib && window.pdfjsWorker) return;
+    await loadScript(PDFJS + 'pdf.min.js');
+    await loadScript(PDFJS + 'pdf.worker.min.js');   // runs on the page itself, so no separate worker file is needed
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
+  }
+
+  async function handlePdf(file){
+    setStatus('Opening the PDF…', true);
+    try{ await ensurePdfJs(); }
+    catch(e){ setStatus('Opening PDFs needs an internet connection. Try again when you\'re online, or paste the pattern text.'); return; }
+    var pdf;
+    try{ pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise; }
+    catch(e){ setStatus("That file couldn't be opened as a PDF. If it's password-protected, save an unlocked copy first."); return; }
+
+    var lines = [];
+    for (var p = 1; p <= pdf.numPages; p++){
+      var page = await pdf.getPage(p);
+      var vw = page.getViewport({ scale: 1 }).width;
+      var content = await page.getTextContent();
+      var items = content.items.map(function(it){ return { str: it.str, x: it.transform[4], y: it.transform[5], w: it.width }; });
+      lines = lines.concat(Parser.linesFromItems(items, vw));
+      lines.push('');
+    }
+    var text = lines.join('\n').trim();
+
+    if (text.replace(/\s/g,'').length >= 60){
+      $('patternInput').value = text;
+      return readPattern(text, null);
+    }
+
+    // Scanned PDF: no text inside, so send pictures of the pages to be read.
+    var sample = await getSample();
+    var caps = sample ? await sample.limits().catch(function(){ return null; }) : null;
+    if (!caps || !caps.images){
+      setStatus("This PDF is a scanned picture with no text inside, so it can't be read here. Type or paste the pattern text instead.");
+      return;
+    }
+    var maxPages = Math.min(pdf.numPages, caps.images.maxCount || 5, 8);
+    setStatus('This PDF is a scanned picture. Preparing ' + maxPages + ' page' + (maxPages > 1 ? 's' : '') + ' to read…', true);
+    var blobs = [];
+    for (var q = 1; q <= maxPages; q++){
+      var pg = await pdf.getPage(q);
+      var base = pg.getViewport({ scale: 1 });
+      var vp = pg.getViewport({ scale: Math.min(2.5, 1400 / base.width) });
+      var c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+      await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      blobs.push(await new Promise(function(r){ c.toBlob(r, 'image/jpeg', 0.85); }));
+    }
+    $('patternInput').value = '';
+    readPattern('', blobs);
+  }
+
+  // ================= REVIEW SCREEN =================
+  function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function rowWord(n){ return n === 1 ? 'row' : 'rows'; }
+  function secRowCount(si){ var n = 0; ex.steps.forEach(function(s){ if (s.sec === si && s.kind === 'row') n++; }); return n; }
+
+  function renderReview(){
+    var plan = state.plan;
+    $('reviewTitle').textContent = plan.title || "Here's what I found";
+    var totalRows = ex.steps.filter(function(s){ return s.kind === 'row'; }).length;
+    var hasLoop = ex.steps.some(function(s){ return s.loop; });
+    $('reviewSummary').textContent = plan.sections.length + (plan.sections.length === 1 ? ' section, ' : ' sections, ') +
+      totalRows + ' ' + rowWord(totalRows) + (hasLoop ? ' plus "repeat until" parts' : '') + '. Tap a section to check its rows.' +
+      (state.note ? ' ' + state.note : '');
+    var list = $('reviewList'); list.innerHTML = '';
+    plan.sections.forEach(function(sec, si){
+      var d = el('details', 'sec'); if (si === 0) d.open = true;
+      var sum = el('summary');
+      var dot = el('span', 'swatchdot'); dot.style.background = YARN[si % YARN.length];
+      sum.appendChild(dot); sum.appendChild(el('span', 'sec-name', sec.name));
+      var n = secRowCount(si); sum.appendChild(el('span', 'sec-count', n + ' ' + rowWord(n)));
+      d.appendChild(sum);
+      var body = el('div', 'blk'), rowNo = sec.firstRow || 1;
+      sec.blocks.forEach(function(b){
+        var rowsIn = b.rows.filter(function(r){ return r.kind === 'row'; }).length;
+        if (b.until) body.appendChild(el('div', 'blk-head', 'Repeat until ' + b.until + ':'));
+        else if (b.times > 1) body.appendChild(el('div', 'blk-head',
+          (b.rows.length === 1 ? 'Rows ' + rowNo + '–' + (rowNo + b.times - 1) + ', same each time:' : 'Repeat these ' + b.times + ' times (rows ' + rowNo + '–' + (rowNo + rowsIn * b.times - 1) + '):')));
+        var r0 = rowNo;
+        b.rows.forEach(function(r){
+          var line = el('div', 'blk-row');
+          line.appendChild(el('span', 'lab', r.kind === 'row' ? ('Row ' + r0++ + (r.side ? ' ' + r.side : '')) : 'Step'));
+          var t = el('span', null, r.text);
+          line.appendChild(t);
+          if (r.stitches) line.appendChild(el('span', 'st', r.stitches + ' sts'));
+          body.appendChild(line);
+        });
+        rowNo += rowsIn * (b.until ? 1 : b.times);
+      });
+      d.appendChild(body);
+      list.appendChild(d);
+    });
+  }
+
+  // ================= TRACKER =================
+  function loopCount(start){ return state.loops[start] || 0; }
+
+  // Real row number, allowing for "repeat until" sets already worked
+  function displayRow(i){
+    var s = ex.steps[i]; if (s.row == null) return null;
+    var extra = 0, seen = {};
+    ex.steps.forEach(function(t){
+      if (t.loop && t.sec === s.sec && !seen[t.loop.start] && t.loop.start <= i){ seen[t.loop.start] = 1; extra += loopCount(t.loop.start) * t.loop.rows; }
+    });
+    return s.row + extra;
+  }
+
+  function rowsDoneBySection(){
+    var done = ex.sections.map(function(){ return 0; });
+    var limit = state.done ? ex.steps.length : state.index;
+    for (var j = 0; j < limit; j++) if (ex.steps[j].kind === 'row') done[ex.steps[j].sec]++;
+    Object.keys(state.loops).forEach(function(k){
+      var s = ex.steps[+k]; if (s && s.loop) done[s.sec] += state.loops[k] * s.loop.rows;
+    });
+    return done;
+  }
+
+  function renderTracker(fresh){
+    if (state.mode === 'counter') return renderCounter(fresh);
+    var i = Math.min(state.index, ex.steps.length - 1), s = ex.steps[i], sec = ex.sections[s.sec];
+    $('trTitle').textContent = state.plan.title || 'Row Tracker';
+    $('sectionsBtn').classList.remove('hidden');
+
+    var sl = $('secLine'); sl.innerHTML = '';
+    var dot = el('span', 'swatchdot'); dot.style.background = YARN[s.sec % YARN.length];
+    sl.appendChild(dot); sl.appendChild(el('strong', null, sec.name));
+    sl.appendChild(el('span', null, 'Section ' + (s.sec + 1) + ' of ' + ex.sections.length));
+
+    // Card
+    var card = $('rowcard');
+    card.style.borderLeftColor = YARN[s.sec % YARN.length];
+    if (state.done){
+      $('rowNum').textContent = 'Finished!';
+      $('rowText').textContent = 'Every row of this pattern is done. Lovely work.';
+      ['repPill','rowEnd','loopNote'].forEach(function(id){ $(id).classList.add('hidden'); });
+    } else {
+      var rn = displayRow(i);
+      $('rowNum').innerHTML = '';
+      $('rowNum').appendChild(document.createTextNode(s.kind === 'row' ? 'Row ' + rn : 'Step'));
+      if (s.side) $('rowNum').appendChild(el('small', null, s.side));
+      $('rowText').textContent = s.text;
+      var pill = $('repPill');
+      if (s.reps > 1){ pill.textContent = 'Repeat ' + s.rep + ' of ' + s.reps; pill.classList.remove('hidden'); }
+      else if (s.loop){ pill.textContent = 'Set ' + (loopCount(s.loop.start) + 1); pill.classList.remove('hidden'); }
+      else pill.classList.add('hidden');
+      $('rowEnd').textContent = s.stitches ? 'You should end with ' + s.stitches + ' stitches' : '';
+      $('rowEnd').classList.toggle('hidden', !s.stitches);
+      $('loopNote').textContent = s.loop ? 'Keep repeating ' + (s.loop.end > s.loop.start ? 'these rows' : 'this row') + ' until ' + s.loop.until + '.' : '';
+      $('loopNote').classList.toggle('hidden', !s.loop);
+    }
+    if (fresh){ card.classList.remove('fresh'); void card.offsetWidth; card.classList.add('fresh'); }
+
+    // Stitch counter (rows only)
+    var showSt = !state.done && s.kind === 'row';
+    $('stitchBox').classList.toggle('hidden', !showSt);
+    $('stCount').textContent = state.stitch + (s.stitches ? ' / ' + s.stitches : '');
+    $('stLabel').textContent = s.stitches
+      ? (state.stitch >= s.stitches ? 'All stitches worked, tap Row done' : 'Tap for each stitch (optional)')
+      : 'Stitches this row. Tap for each one (optional)';
+    $('stMinus').disabled = state.stitch <= 0;
+
+    // Nav
+    $('backBtn').disabled = i === 0 && !state.done && loopCount(s.loop ? s.loop.start : -1) === 0;
+    $('nextBtn').disabled = state.done;
+    $('nextBtn').textContent = s.kind === 'row' ? 'Row done' : 'Step done';
+    $('moveOnBtn').classList.toggle('hidden', state.done || !s.loop);
+
+    // Up next
+    var up = $('upNext');
+    if (state.done) up.textContent = '';
+    else if (s.loop && i === s.loop.end) up.innerHTML = '<b>Up next:</b> back to the start of this repeat, or tap "Reached it" when you get there.';
+    else if (i < ex.steps.length - 1){
+      var nx = ex.steps[i + 1]; up.innerHTML = '';
+      var lab = nx.sec !== s.sec ? 'Next section, ' + ex.sections[nx.sec].name + ': ' : 'Up next: ';
+      up.appendChild(el('b', null, lab)); up.appendChild(document.createTextNode(nx.text));
+    } else up.innerHTML = '<b>This is the last one.</b>';
+
+    drawSwatch(fresh);
+    drawOverall();
+  }
+
+  // ---------- The knitted swatch: finished rows stack up like real fabric ----------
+  var COLS = 15, SW = 320 / COLS, RH = 13;
+  function vPath(x, y){ // one knit stitch = a little V
+    var w = SW, h = RH;
+    return 'M' + (x + w * 0.1) + ' ' + (y + 1) + ' Q' + (x + w * 0.24) + ' ' + (y + h * 0.62) + ' ' + (x + w * 0.5) + ' ' + (y + h + 1) +
+           ' M' + (x + w * 0.9) + ' ' + (y + 1) + ' Q' + (x + w * 0.76) + ' ' + (y + h * 0.62) + ' ' + (x + w * 0.5) + ' ' + (y + h + 1);
+  }
+  function drawRow(svg, y, color, opts){
+    var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    for (var c = 0; c < COLS; c++){
+      var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', vPath(c * SW, y));
+      var filled = opts.fill == null ? true : (COLS - 1 - c) < opts.fill; // fills right-to-left, like working across
+      p.setAttribute('stroke', filled ? color : 'var(--text-dim)');
+      p.setAttribute('stroke-width', filled ? 3.4 : 1.6);
+      p.setAttribute('stroke-linecap', 'round');
+      p.setAttribute('fill', 'none');
+      p.setAttribute('opacity', opts.faint ? 0.22 : (filled ? 1 : 0.45));
+      if (!filled && !opts.faint) p.setAttribute('stroke-dasharray', '2 3');
+      g.appendChild(p);
+    }
+    if (opts.cls) g.setAttribute('class', opts.cls);
+    svg.appendChild(g);
+  }
+
+  function drawSwatch(fresh){
+    var svg = $('swatch'); svg.innerHTML = '';
+    var done = rowsDoneBySection();          // rows finished in each section
+    var seq = [];                             // colours of finished rows, oldest first
+    done.forEach(function(n, si){ for (var k = 0; k < n; k++) seq.push(si); });
+    var future = [];
+    if (!state.done){
+      for (var j = state.index + 1; j < ex.steps.length && future.length < 3; j++) if (ex.steps[j].kind === 'row') future.push(ex.steps[j].sec);
+    }
+    var cur = (!state.done && ex.steps[state.index].kind === 'row') ? ex.steps[state.index] : null;
+    var showDone = seq.slice(-9);
+    var castOnShown = seq.length <= 9;
+    var total = showDone.length + (cur ? 1 : 0) + future.length;
+    var h = Math.max(total, 1) * RH + 22 + (castOnShown ? 8 : 0);
+    svg.setAttribute('viewBox', '0 0 320 ' + h);
+    var y = 8;
+    future.slice().reverse().forEach(function(si){ drawRow(svg, y, YARN[si % YARN.length], { faint: true }); y += RH; });
+    if (cur){
+      var fill = cur.stitches ? Math.round(COLS * Math.min(1, state.stitch / cur.stitches)) : (state.stitch ? ((state.stitch - 1) % COLS) + 1 : 0);
+      var band = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      band.setAttribute('x', 0); band.setAttribute('y', y - 3); band.setAttribute('width', 320); band.setAttribute('height', RH + 8);
+      band.setAttribute('rx', 7); band.setAttribute('fill', YARN[cur.sec % YARN.length]); band.setAttribute('opacity', .14);
+      svg.appendChild(band);
+      drawRow(svg, y, YARN[cur.sec % YARN.length], { fill: fill });
+      // the needle, holding the row you're working
+      var nd = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      nd.innerHTML = '<line x1="4" y1="' + (y - 1) + '" x2="304" y2="' + (y - 1) + '" stroke="var(--text)" stroke-width="3" stroke-linecap="round" opacity=".75"/>' +
+                     '<circle cx="310" cy="' + (y - 1) + '" r="6" fill="var(--text)" opacity=".75"/>';
+      svg.appendChild(nd);
+      y += RH + 8;
+    }
+    showDone.slice().reverse().forEach(function(si, k){
+      drawRow(svg, y, YARN[si % YARN.length], { cls: (fresh && k === 0) ? 'fresh' : null }); y += RH;
+    });
+    if (castOnShown){
+      var edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      edge.setAttribute('d', 'M4 ' + (y + 4) + ' L316 ' + (y + 4));
+      edge.setAttribute('stroke', 'var(--text-dim)'); edge.setAttribute('stroke-width', '2'); edge.setAttribute('stroke-dasharray', '1 5'); edge.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(edge);
+    }
+    svg.setAttribute('aria-label', seq.length + ' rows finished');
+  }
+
+  function drawOverall(){
+    var bar = $('overall'); bar.innerHTML = '';
+    var done = rowsDoneBySection(), tot = 0, got = 0;
+    ex.sections.forEach(function(sec, si){
+      var n = Math.max(1, secRowCount(si));
+      var f = state.done ? 1 : Math.min(1, done[si] / n);
+      tot += n; got += f * n;
+      var seg = el('button', 'seg'); seg.style.flex = n + ' 1 0';
+      seg.setAttribute('aria-label', sec.name + ', ' + Math.round(f * 100) + '% done');
+      seg.onclick = openSheet;
+      var fill = el('i'); fill.style.width = (f * 100) + '%'; fill.style.background = YARN[si % YARN.length];
+      seg.appendChild(fill); bar.appendChild(seg);
+    });
+    var pct = Math.round(got / tot * 100);
+    $('overallLeft').textContent = pct + '% of the pattern';
+    var s = ex.steps[Math.min(state.index, ex.steps.length - 1)];
+    var secN = secRowCount(s.sec);
+    var inLoop = ex.steps.some(function(t){ return t.sec === s.sec && t.loop; });
+    $('overallRight').textContent = state.done ? 'All done'
+      : inLoop ? done[s.sec] + ' ' + rowWord(done[s.sec]) + ' worked in this section'
+      : Math.min(done[s.sec], secN) + ' of ' + secN + ' ' + rowWord(secN) + ' in this section';
+  }
+
+  // ---------- Plain counter mode (no pattern) ----------
+  function renderCounter(fresh){
+    $('trTitle').textContent = 'Row counter';
+    $('sectionsBtn').classList.add('hidden');
+    $('secLine').innerHTML = '';
+    $('rowNum').textContent = 'Row ' + (state.row + 1);
+    $('rowText').textContent = state.row === 0 ? 'Tap "Row done" at the end of each row.' : state.row + ' ' + rowWord(state.row) + ' finished so far.';
+    ['repPill','rowEnd','loopNote','moveOnBtn'].forEach(function(id){ $(id).classList.add('hidden'); });
+    $('rowcard').style.borderLeftColor = 'var(--y0)';
+    $('stitchBox').classList.remove('hidden');
+    $('stCount').textContent = state.stitch; $('stLabel').textContent = 'Stitches this row. Tap for each one (optional)';
+    $('stMinus').disabled = state.stitch <= 0;
+    $('backBtn').disabled = state.row === 0; $('nextBtn').disabled = false; $('nextBtn').textContent = 'Row done';
+    $('upNext').textContent = '';
+    var svg = $('swatch'); svg.innerHTML = '';
+    var shown = Math.min(state.row, 9), h = (shown + 1) * RH + 30;
+    svg.setAttribute('viewBox', '0 0 320 ' + h);
+    drawRow(svg, 8, 'var(--y0)', { fill: state.stitch ? ((state.stitch - 1) % COLS) + 1 : 0 });
+    var y = 8 + RH + 8;
+    for (var k = 0; k < shown; k++){ drawRow(svg, y, 'var(--y0)', { cls: (fresh && k === 0) ? 'fresh' : null }); y += RH; }
+    $('overall').innerHTML = ''; $('overallLeft').textContent = state.row + ' ' + rowWord(state.row) + ' done'; $('overallRight').textContent = '';
+  }
+
+  // ---------- Moving through the pattern ----------
+  function next(){
+    buzz(25); state.stitch = 0;
+    if (state.mode === 'counter'){ state.row++; save(); return renderTracker(true); }
+    var i = state.index, s = ex.steps[i];
+    if (s.loop && i === s.loop.end){ state.loops[s.loop.start] = loopCount(s.loop.start) + 1; state.index = s.loop.start; }
+    else if (i < ex.steps.length - 1) state.index++;
+    else state.done = true;
+    save(); renderTracker(true);
+  }
+  function back(){
+    state.stitch = 0;
+    if (state.mode === 'counter'){ if (state.row > 0) state.row--; save(); return renderTracker(false); }
+    var i = state.index, s = ex.steps[i];
+    if (state.done) state.done = false;
+    else if (s.loop && i === s.loop.start && loopCount(s.loop.start) > 0){ state.loops[s.loop.start]--; state.index = s.loop.end; }
+    else if (i > 0) state.index--;
+    save(); renderTracker(false);
+  }
+  function moveOn(){
+    var s = ex.steps[state.index]; if (!s.loop) return;
+    buzz(25); state.stitch = 0;
+    if (s.loop.end < ex.steps.length - 1) state.index = s.loop.end + 1; else state.done = true;
+    save(); renderTracker(true);
+  }
+
+  // ---------- Sections sheet ----------
+  function openSheet(){
+    if (state.mode !== 'pattern') return;
+    var list = $('sheetList'); list.innerHTML = '';
+    var done = rowsDoneBySection(), curSec = ex.steps[Math.min(state.index, ex.steps.length - 1)].sec;
+    ex.sections.forEach(function(sec, si){
+      var n = secRowCount(si), f = state.done ? 1 : Math.min(1, done[si] / Math.max(1, n));
+      var b = el('button', 'sec-item' + (si === curSec && !state.done ? ' here' : ''));
+      var dot = el('span', 'swatchdot'); dot.style.background = YARN[si % YARN.length];
+      b.appendChild(dot);
+      b.appendChild(el('span', 'sec-name', sec.name + (f >= 1 ? '  ✓' : '')));
+      var bar = el('span', 'bar'), fill = el('i'); fill.style.width = (f * 100) + '%'; fill.style.background = YARN[si % YARN.length];
+      bar.appendChild(fill); b.appendChild(bar);
+      b.onclick = function(){ state.index = sec.start; state.done = false; state.stitch = 0; save(); closeSheet(); renderTracker(true); };
+      list.appendChild(b);
+    });
+    $('sheet').classList.remove('hidden');
+  }
+  function closeSheet(){ $('sheet').classList.add('hidden'); }
+
+  // ---------- Keep the screen awake while knitting ----------
+  var wakeLock = null;
+  async function toggleWake(){
+    try{
+      if (wakeLock){ await wakeLock.release(); wakeLock = null; $('wakeBtn').textContent = 'Keep screen on'; return; }
+      if (!('wakeLock' in navigator)) throw 0;
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', function(){ wakeLock = null; $('wakeBtn').textContent = 'Keep screen on'; });
+      $('wakeBtn').textContent = 'Screen stays on ✓';
+    } catch(e){ $('wakeBtn').textContent = "Can't keep screen on here"; }
+  }
+
+  // ================= WIRING =================
+  $('pdfBtn').onclick = function(){ $('pdfInput').click(); };
+  $('pdfInput').onchange = function(e){ var f = e.target.files[0]; e.target.value = ''; if (f) handlePdf(f); };
+  $('readBtn').onclick = function(){
+    var t = $('patternInput').value;
+    if (!t.trim()){ setStatus('Paste a pattern or upload a PDF first.'); return; }
+    readPattern(t, null);
+  };
+  $('cancelBtn').onclick = function(){ if (readCtl) readCtl.abort(); };
+  $('counterBtn').onclick = function(){ state = { v: 2, mode: 'counter', row: 0, stitch: 0 }; save(); show('tracker'); renderTracker(false); };
+  $('startBtn').onclick = function(){ show('tracker'); renderTracker(false); };
+  $('backToEditBtn').onclick = function(){ $('patternInput').value = state.raw || ''; $('sizeInput').value = state.size || ''; setStatus(''); show('setup'); };
+  $('nextBtn').onclick = next;
+  $('backBtn').onclick = back;
+  $('moveOnBtn').onclick = moveOn;
+  $('stPlus').onclick = function(){ state.stitch++; buzz(8); save(); renderTracker(false); };
+  $('stMinus').onclick = function(){ if (state.stitch > 0){ state.stitch--; save(); renderTracker(false); } };
+  $('sectionsBtn').onclick = openSheet;
+  $('sheetClose').onclick = closeSheet;
+  $('sheet').onclick = function(e){ if (e.target === $('sheet')) closeSheet(); };
+  $('wakeBtn').onclick = toggleWake;
+  $('editBtn').onclick = function(){
+    $('patternInput').value = (state && state.raw) || ''; $('sizeInput').value = (state && state.size) || '';
+    setStatus(state && state.mode === 'pattern' ? 'Your place is saved until you read a new pattern.' : ''); show('setup');
+    $('counterBtn').textContent = state && state.mode === 'pattern' ? 'Back to my place' : 'No pattern? Just count rows';
+  };
+  $('resetBtn').onclick = function(){
+    if (!confirm('Start over? This clears your pattern and progress.')) return;
+    state = null; ex = null; try{ localStorage.removeItem(KEY); } catch(e){}
+    $('patternInput').value = ''; $('sizeInput').value = ''; setStatus('');
+    $('counterBtn').textContent = 'No pattern? Just count rows'; show('setup');
+  };
+  // "Back to my place" reuses the counter button while editing an existing pattern
+  var counterStart = $('counterBtn').onclick;
+  $('counterBtn').onclick = function(){
+    if (state && state.mode === 'pattern' && ex && $('counterBtn').textContent === 'Back to my place'){ show('tracker'); renderTracker(false); return; }
+    counterStart();
+  };
+
+  // ---------- Start up ----------
+  state = load();
+  if (state && state.v === 2 && state.mode === 'pattern' && state.plan){
+    try{ ex = Parser.expand(state.plan); if (state.index >= ex.steps.length) state.index = ex.steps.length - 1; show('tracker'); renderTracker(false); }
+    catch(e){ state = null; show('setup'); }
+  } else if (state && state.v === 2 && state.mode === 'counter'){ show('tracker'); renderTracker(false); }
+  else { state = null; show('setup'); }
+})();
+</script>
+</body>
+</html>
