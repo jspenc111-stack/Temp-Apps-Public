@@ -148,7 +148,6 @@ html, body {
 .meter-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-dim); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
 .meter { position: relative; height: 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
 .meter-fill { height: 100%; width: 50%; border-radius: 999px; background: var(--accent-2); transition: width 0.3s ease, background 0.3s ease; }
-.meter-danger { position: absolute; top: 0; bottom: 0; right: 0; width: 15%; background: repeating-linear-gradient(135deg, rgba(255,90,78,0.35) 0 4px, transparent 4px 8px); }
 .info-mood { margin-top: 10px; font-size: 14px; }
 .meals { margin-top: 6px; font-size: 13px; color: var(--ink-dim); }
 .meals b { color: var(--ink); }

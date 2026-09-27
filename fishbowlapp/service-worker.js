@@ -1,4 +1,4 @@
-const CACHE = 'fishbowl-v1';
+const CACHE = 'fishbowl-v2';
 const ASSETS = [
   './',
   './index.html',

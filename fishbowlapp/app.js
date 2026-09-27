@@ -9,7 +9,8 @@ const CFG = {
   DRAIN_PER_SEC: 1 / 10,        // -1 fullness every 10 seconds
   FEED_AMOUNT: 30,              // +30 per meal
   BINGE_WINDOW_MS: 60 * 1000,   // meals eaten inside this window count toward popping
-  BINGE_MEALS_TO_POP: 3,        // 3 meals in one minute = pop
+  MAX_MEALS_PER_MINUTE: 10,     // eating more than 10 meals in one minute = pop
+  WARN_AT_MEALS: 8,             // fish start jiggling as a warning at this many
   DEAD_FADE_MS: 3000,           // belly-up fish disappear after ~3s
   MEAL_TIMEOUT_MS: 9000,        // a fish always gets its meal within this time
   SAVE_EVERY_MS: 2000
@@ -625,12 +626,13 @@ function recentMeals(f, now) {
   return f.meals.filter((t) => now - t < CFG.BINGE_WINDOW_MS).length;
 }
 
-// Visual fatness: grows with each meal in the last minute and with fullness.
+// Visual fatness: grows with each meal in the last minute (fading as meals
+// age out of the window) and a little with fullness.
 function fatness(f, now) {
   const recent = f.meals
     .filter((t) => now - t < CFG.BINGE_WINDOW_MS)
-    .reduce((acc, t) => acc + (1 - (now - t) / CFG.BINGE_WINDOW_MS) * 0.35 + 0.1, 0);
-  return 1 + recent + Math.max(0, (f.fullness - 55) / 45) * 0.25;
+    .reduce((acc, t) => acc + 0.5 + 0.5 * (1 - (now - t) / CFG.BINGE_WINDOW_MS), 0);
+  return 1 + (recent / CFG.MAX_MEALS_PER_MINUTE) * 0.9 + Math.max(0, (f.fullness - 55) / 45) * 0.15;
 }
 
 function fishLength(f) {
@@ -641,13 +643,11 @@ function fishLength(f) {
 function eat(f, now) {
   f.meals.push(now);
   f.meals = f.meals.filter((t) => now - t < CFG.BINGE_WINDOW_MS);
-  f.fullness += CFG.FEED_AMOUNT;
+  f.fullness = Math.min(100, f.fullness + CFG.FEED_AMOUNT);
   f.gulp = 1;
-  if (f.fullness > 100) {
-    startPop(f, now, 'overfed');
-  } else if (f.meals.length >= CFG.BINGE_MEALS_TO_POP) {
+  if (f.meals.length > CFG.MAX_MEALS_PER_MINUTE) {
     startPop(f, now, 'binge');
-  } else if (f.meals.length === CFG.BINGE_MEALS_TO_POP - 1 || f.fullness > 85) {
+  } else if (f.meals.length >= CFG.WARN_AT_MEALS) {
     particles.push({ kind: 'text', text: 'urp!', x: f.x, y: f.y - 0.12, vx: 0, vy: -0.08, r: 0, rot: 0, vr: 0, age: 0, life: 1.2, buoyant: true });
   }
 }
@@ -705,10 +705,7 @@ function updateFish(f, dt, now) {
     if (now - f.stateAt > 700) {
       burst(f);
       f.remove = true;
-      const msg = f.cause === 'binge'
-        ? `💥 ${f.name} ate too much in one minute and popped!`
-        : `💥 ${f.name} got too full and popped!`;
-      toast(msg);
+      toast(`💥 ${f.name} ate more than ${CFG.MAX_MEALS_PER_MINUTE} meals in a minute and popped!`);
     }
     return;
   }
@@ -814,7 +811,7 @@ function drawFish(f, now) {
     bellyUp = true;
     const fadeK = clamp((now - f.stateAt - (CFG.DEAD_FADE_MS - 1000)) / 1000, 0, 1);
     alpha = 1 - fadeK;
-  } else if (recentMeals(f, now) >= CFG.BINGE_MEALS_TO_POP - 1 || f.fullness > 85) {
+  } else if (recentMeals(f, now) >= CFG.WARN_AT_MEALS) {
     // One more meal and... jiggle as a warning.
     wobble = Math.sin(now / 90) * 0.03;
   }
@@ -1269,22 +1266,23 @@ function updateInfo(now) {
   $('infoPct').textContent = `${Math.round(full)} / 100`;
   const bar = $('infoBar');
   bar.style.width = `${full}%`;
-  bar.style.background = full < 20 ? '#ff5a4e' : full > 85 ? '#ffb020' : '#3fc1b0';
+  bar.style.background = full < 20 ? '#ff5a4e' : '#3fc1b0';
   const recent = recentMeals(f, now);
   let mood;
   if (f.state === 'popping') mood = '😵 Uh oh…';
   else if (f.state !== 'alive') mood = '🪦 Resting in peace';
   else if (full < 15) mood = '😫 Starving! Feed me!';
   else if (full < 35) mood = '😟 Getting hungry';
-  else if (recent >= CFG.BINGE_MEALS_TO_POP - 1 || full > 85) mood = '🤢 Stuffed. One more bite could be fatal.';
+  else if (recent >= CFG.MAX_MEALS_PER_MINUTE) mood = '🤢 About to burst. One more bite and it pops!';
+  else if (recent >= CFG.WARN_AT_MEALS) mood = '😣 Bloated. Ease off the food.';
   else if (full > 70) mood = '😌 Nicely full';
   else mood = '🙂 Happy and swimming';
   $('infoMood').textContent = mood;
   const mealsEl = $('infoMeals');
   const secsLeft = recent ? Math.ceil((CFG.BINGE_WINDOW_MS - (now - Math.min(...f.meals.filter((t) => now - t < CFG.BINGE_WINDOW_MS)))) / 1000) : 0;
-  mealsEl.innerHTML = `Meals this minute: <b>${recent} / ${CFG.BINGE_MEALS_TO_POP}</b>` +
+  mealsEl.innerHTML = `Meals this minute: <b>${recent} / ${CFG.MAX_MEALS_PER_MINUTE}</b>` +
     (recent ? ` · oldest clears in ${secsLeft}s` : '');
-  mealsEl.classList.toggle('warn', recent >= CFG.BINGE_MEALS_TO_POP - 1);
+  mealsEl.classList.toggle('warn', recent >= CFG.WARN_AT_MEALS);
 }
 
 addBtn.addEventListener('click', () => {
