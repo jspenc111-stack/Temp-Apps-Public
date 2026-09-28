@@ -1,0 +1,100 @@
+rules_version = '2';
+
+// Security rules for the shared fishbowl.
+// Paste this whole file into Firebase → Firestore Database → Rules → Publish.
+//
+// - Only signed-in users (the app signs in anonymously behind the scenes).
+// - You can read ONE bowl if you know its code, but never list the bowls.
+// - Only rooms/{code} exists, and the code must look like a real room code.
+// - A bowl holds at most 10 fish and a feed log of at most 20 entries.
+// - Nicknames and fish names are at most 20 characters.
+// - The feed log is append-only: each save may add one new entry at the
+//   front, and older entries can't be changed or erased.
+// - Bowls can't be deleted.
+//
+// Firestore stops after 1000 checks per request, so the checks are kept
+// small. The rules language has no loops, so fish are checked one position
+// at a time (0–9). Thanks to the append-only log, only the newest log entry
+// needs checking; older ones were checked when they were added.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isRoomCode(code) {
+      return code.matches('^[A-HJ-NP-Z2-9]{6}$');
+    }
+
+    function shortText(v) {
+      return v is string && v.size() <= 20;
+    }
+
+    function fishOk(f) {
+      return f.name is string && f.name.size() > 0 && f.name.size() <= 20
+        && shortText(f.addedBy);
+    }
+
+    function validFishMap(m) {
+      let v = m.values();
+      let n = v.size();
+      return n <= 10
+        && (n < 1 || fishOk(v[0])) && (n < 2 || fishOk(v[1])) && (n < 3 || fishOk(v[2]))
+        && (n < 4 || fishOk(v[3])) && (n < 5 || fishOk(v[4])) && (n < 6 || fishOk(v[5]))
+        && (n < 7 || fishOk(v[6])) && (n < 8 || fishOk(v[7])) && (n < 9 || fishOk(v[8]))
+        && (n < 10 || fishOk(v[9]));
+    }
+
+    function logEntryOk(e) {
+      return e is map
+        && e.keys().hasOnly(['by', 'at', 'fishId', 'fishName'])
+        && shortText(e.by)
+        && e.at is number
+        && (e.get('fishName', null) == null || shortText(e.fishName));
+    }
+
+    // The log stays the same, or gains exactly one new entry at the front
+    // (dropping the oldest once it holds 20).
+    function logChangeOk(next, prev) {
+      let n = next.size();
+      return next is list && n <= 20
+        && (next == prev
+            || ((n == prev.size() + 1 || (n == 20 && prev.size() == 20))
+                && logEntryOk(next[0])
+                && (n == 1 || next[1:n] == prev[0:n - 1])));
+    }
+
+    function validRoom(d) {
+      return d.keys().hasOnly(['createdAt', 'lastFedAt', 'lastFedBy', 'feedLog', 'fish'])
+        && d.keys().hasAll(['createdAt', 'feedLog', 'fish'])
+        && d.createdAt is timestamp
+        && (d.get('lastFedAt', null) == null || d.lastFedAt is timestamp)
+        && (d.get('lastFedBy', null) == null || shortText(d.lastFedBy))
+        && d.fish is map
+        && validFishMap(d.fish);
+    }
+
+    match /rooms/{code} {
+      // Read one bowl by its code. Listing all bowls is never allowed.
+      allow get: if signedIn() && isRoomCode(code);
+      allow list: if false;
+
+      // Cheap checks come first so a rule that doesn't apply stops early.
+      allow create: if signedIn() && isRoomCode(code)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.feedLog == []
+        && validRoom(request.resource.data);
+
+      allow update: if signedIn() && isRoomCode(code)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && logChangeOk(request.resource.data.feedLog, resource.data.feedLog)
+        && validRoom(request.resource.data);
+
+      allow delete: if false;
+    }
+
+    // Anything not matched above is denied.
+  }
+}

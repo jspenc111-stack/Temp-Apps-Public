@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node fishbowlapp/tests/run.mjs)",
+      "Bash(node tests/run.mjs)",
+      "Bash(python3 -m http.server:*)",
+      "Bash(python3 tools/make_icons.py)",
+      "Bash(python3 fishbowlapp/tools/make_icons.py)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)"
+    ]
+  }
+}

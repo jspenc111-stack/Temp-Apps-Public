@@ -1,52 +1,12 @@
-'use strict';
+// Fishbowl: the UI, the scene, and the fish animation.
+// Game rules live in fish-rules.js; Firebase lives in bowl.js, which is
+// loaded on demand so the app still opens offline and in ?demo mode.
 
-// ---------------------------------------------------------------------------
-// Tunable rules
-// ---------------------------------------------------------------------------
-const CFG = {
-  MAX_FISH: 10,
-  START_FULLNESS: 50,
-  DRAIN_PER_SEC: 1 / 10,        // -1 fullness every 10 seconds
-  FEED_AMOUNT: 30,              // +30 per meal
-  BINGE_WINDOW_MS: 60 * 1000,   // meals eaten inside this window count toward popping
-  MAX_MEALS_PER_MINUTE: 10,     // eating more than 10 meals in one minute = pop
-  WARN_AT_MEALS: 8,             // fish start jiggling as a warning at this many
-  DEAD_FADE_MS: 3000,           // belly-up fish disappear after ~3s
-  MEAL_TIMEOUT_MS: 9000,        // a fish always gets its meal within this time
-  SAVE_EVERY_MS: 2000
-};
-const STORAGE_KEY = 'fishbowl.v1';
+import * as R from './fish-rules.js';
 
-const PALETTES = [
-  { key: 'orange',  label: 'Orange',   top: '#c2410c', mid: '#ff8a2a', belly: '#ffe0b8', fin: '#ff9f43' },
-  { key: 'gold',    label: 'Gold',     top: '#b7791f', mid: '#f6c343', belly: '#fff3c4', fin: '#ffd66b' },
-  { key: 'silver',  label: 'Silver',   top: '#5b6b7a', mid: '#b8c4cf', belly: '#f4f7fa', fin: '#d6dee6' },
-  { key: 'red',     label: 'Red',      top: '#9b1c1c', mid: '#e53e3e', belly: '#ffd1d1', fin: '#ff6b6b' },
-  { key: 'calico',  label: 'Calico',   top: '#1f2937', mid: '#f97316', belly: '#fff7ed', fin: '#fdba74' },
-  { key: 'blue',    label: 'Blue',     top: '#1e3a8a', mid: '#3b82f6', belly: '#dbeafe', fin: '#93c5fd' },
-  { key: 'white',   label: 'Pearl',    top: '#a8a29e', mid: '#f5f0e8', belly: '#ffffff', fin: '#fde2cf' },
-  { key: 'lemon',   label: 'Lemon',    top: '#a16207', mid: '#facc15', belly: '#fefce8', fin: '#fde047' }
-];
-
-const NAMES = [
-  'Bubbles', 'Finn', 'Nemo', 'Goldie', 'Sushi', 'Captain', 'Blub', 'Noodle', 'Pickles', 'Biscuit',
-  'Gill', 'Marlin', 'Wanda', 'Squirt', 'Mango', 'Pebble', 'Ziggy', 'Waffles', 'Dory', 'Sir Swims',
-  'Jellybean', 'Mochi', 'Rocket', 'Pip', 'Coral', 'Tofu', 'Sprinkles', 'Olive', 'Chompers', 'Kipper',
-  'Minnie', 'Shelly', 'Taco', 'Fishstick', 'Admiral', 'Puddle', 'Gus', 'Poppy', 'Sunny', 'Wiggles'
-];
-
-// ---------------------------------------------------------------------------
-// DOM
-// ---------------------------------------------------------------------------
-const canvas = document.getElementById('scene');
-const ctx = canvas.getContext('2d');
 const $ = (id) => document.getElementById(id);
-const countEl = $('count');
-const addBtn = $('addBtn');
-const feedBtn = $('feedBtn');
-const fullMsg = $('fullMsg');
-const infoEl = $('info');
-const toastsEl = $('toasts');
+const canvas = $('scene');
+const ctx = canvas.getContext('2d');
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -77,16 +37,6 @@ function pale(hex, t) {
   const grey = 0.3 * r + 0.59 * g + 0.11 * b;
   const m = (c) => Math.round(lerp(c, lerp(grey, 225, 0.55), t));
   return `rgb(${m(r)},${m(g)},${m(b)})`;
-}
-
-function formatAge(ms) {
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s old`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min old`;
-  const h = Math.floor(m / 60);
-  if (h < 48) return `${h} hr ${m % 60} min old`;
-  return `${Math.floor(h / 24)} days old`;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,11 +89,11 @@ function resize() {
   canvas.width = Math.round(G.w * G.dpr);
   canvas.height = Math.round(G.h * G.dpr);
 
-  const topSpace = 60, bottomSpace = 120;
+  const topSpace = 132, bottomSpace = 130;
   const avail = G.h - topSpace - bottomSpace;
   G.R = Math.max(80, Math.min(G.w * 0.46, avail * 0.56, 380));
   G.cx = G.w / 2;
-  G.cy = topSpace + avail * 0.5 + G.R * 0.02;
+  G.cy = topSpace + avail * 0.56;
 
   buildBackground();
   buildGravel();
@@ -530,443 +480,6 @@ function drawParticles() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Food flakes. Each "meal" belongs to one fish; it's a small cluster of flakes
-// that sinks until that fish swims over and eats it.
-// ---------------------------------------------------------------------------
-let meals = [];
-function dropMeal(fish, now) {
-  const x = clamp(fish.x + rand(-0.5, 0.5), -0.6, 0.6);
-  meals.push({
-    owner: fish.id,
-    x,
-    y: BOWL.WATER_Y + 0.01,
-    vy: rand(0.05, 0.09),
-    born: now,
-    flakes: Array.from({ length: 5 }, () => ({
-      dx: rand(-0.04, 0.04), dy: rand(-0.025, 0.025), r: rand(0.011, 0.018), rot: rand(0, Math.PI),
-      c: pick(['#c0392b', '#e67e22', '#d35400', '#f1c40f', '#8e5a2a'])
-    }))
-  });
-}
-function updateMeals(dt, now) {
-  for (const m of meals) {
-    const floor = BOWL.GRAVEL_Y - 0.03;
-    if (m.y < floor) {
-      m.y = Math.min(floor, m.y + m.vy * dt);
-      m.x += Math.sin(now / 600 + m.born) * 0.01 * dt;
-    }
-    // uneaten meals of dead fish just dissolve
-    if (!fishes.some((f) => f.id === m.owner && f.state === 'alive') && now - m.born > 4000) m.dead = true;
-  }
-  meals = meals.filter((m) => !m.dead);
-}
-function drawMeals(now) {
-  for (const m of meals) {
-    const fadeOut = fishes.some((f) => f.id === m.owner && f.state === 'alive') ? 1 : clamp(1 - (now - m.born - 2000) / 2000, 0, 1);
-    for (const f of m.flakes) {
-      const [px, py] = toPx(m.x + f.dx, m.y + f.dy);
-      ctx.save();
-      ctx.globalAlpha = fadeOut;
-      ctx.translate(px, py);
-      ctx.rotate(f.rot + now / 1500);
-      ctx.fillStyle = f.c;
-      const s = f.r * G.R;
-      ctx.fillRect(-s, -s * 0.5, s * 2, s);
-      ctx.restore();
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Fish
-// ---------------------------------------------------------------------------
-let fishes = [];
-let nextId = 1;
-let selectedId = null;
-
-function newFish(now) {
-  const usedNames = new Set(fishes.map((f) => f.name));
-  const name = pick(NAMES.filter((n) => !usedNames.has(n))) || `Fish #${nextId}`;
-  const usedPals = fishes.map((f) => f.pal);
-  const pal = pick(PALETTES.filter((p) => !usedPals.includes(p.key))) || pick(PALETTES);
-  // New fish plop in at the surface and swim down.
-  const x = rand(-0.4, 0.4);
-  return makeFish({
-    id: nextId++, name, pal: pal.key, size: rand(0.85, 1.12),
-    fullness: CFG.START_FULLNESS, x, y: BOWL.WATER_Y + 0.08, born: now, meals: []
-  });
-}
-
-function makeFish(d) {
-  const [tx, ty] = randomSwimPoint();
-  return {
-    ...d,
-    vx: rand(-0.1, 0.1), vy: 0.15,
-    tx, ty,
-    retarget: rand(2, 5),
-    face: Math.random() < 0.5 ? -1 : 1,
-    tilt: 0,
-    tail: rand(0, 10),
-    fin: rand(0, 10),
-    speedMul: rand(0.85, 1.15),
-    scared: 0,
-    state: 'alive',     // alive | starved (belly-up) | popping
-    stateAt: 0,
-    cause: null,
-    gulp: 0             // little squash when eating
-  };
-}
-
-function palette(f) {
-  return PALETTES.find((p) => p.key === f.pal) || PALETTES[0];
-}
-
-function recentMeals(f, now) {
-  return f.meals.filter((t) => now - t < CFG.BINGE_WINDOW_MS).length;
-}
-
-// Visual fatness: grows with each meal in the last minute (fading as meals
-// age out of the window) and a little with fullness.
-function fatness(f, now) {
-  const recent = f.meals
-    .filter((t) => now - t < CFG.BINGE_WINDOW_MS)
-    .reduce((acc, t) => acc + 0.5 + 0.5 * (1 - (now - t) / CFG.BINGE_WINDOW_MS), 0);
-  return 1 + (recent / CFG.MAX_MEALS_PER_MINUTE) * 0.9 + Math.max(0, (f.fullness - 55) / 45) * 0.15;
-}
-
-function fishLength(f) {
-  // Size shifts slightly with fullness.
-  return G.R * 0.24 * f.size * (0.9 + 0.18 * clamp(f.fullness, 0, 100) / 100);
-}
-
-function eat(f, now) {
-  f.meals.push(now);
-  f.meals = f.meals.filter((t) => now - t < CFG.BINGE_WINDOW_MS);
-  f.fullness = Math.min(100, f.fullness + CFG.FEED_AMOUNT);
-  f.gulp = 1;
-  if (f.meals.length > CFG.MAX_MEALS_PER_MINUTE) {
-    startPop(f, now, 'binge');
-  } else if (f.meals.length >= CFG.WARN_AT_MEALS) {
-    particles.push({ kind: 'text', text: 'urp!', x: f.x, y: f.y - 0.12, vx: 0, vy: -0.08, r: 0, rot: 0, vr: 0, age: 0, life: 1.2, buoyant: true });
-  }
-}
-
-function startPop(f, now, cause) {
-  f.state = 'popping';
-  f.stateAt = now;
-  f.cause = cause;
-}
-
-function burst(f) {
-  const pal = palette(f);
-  for (let i = 0; i < 26; i++) {
-    const a = rand(0, Math.PI * 2), s = rand(0.3, 1.1);
-    particles.push({
-      kind: i % 3 === 0 ? 'bubble' : 'scale',
-      color: pick([pal.mid, pal.fin, pal.belly, pal.top]),
-      x: f.x, y: f.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-      r: rand(0.008, 0.02), rot: rand(0, 6), vr: rand(-8, 8),
-      age: 0, life: rand(0.9, 1.8), buoyant: i % 3 === 0
-    });
-  }
-  particles.push({ kind: 'text', text: 'POP!', x: f.x, y: f.y - 0.05, vx: 0, vy: -0.1, r: 0, rot: 0, vr: 0, age: 0, life: 1.3, buoyant: true });
-  ripples.push({ x: f.x, y: f.y, age: 0, life: 0.6, size: 0.05, color: 'rgba(255,240,200,0.9)' });
-  // Nearby fish get a fright.
-  for (const o of fishes) if (o !== f) startle(o, f.x, f.y, 0.7);
-}
-
-function die(f, now, cause) {
-  f.state = 'starved';
-  f.stateAt = now;
-  f.cause = cause;
-  f.deadX = f.x;
-  f.deadY = f.y;
-}
-
-function startle(f, x, y, radius) {
-  if (f.state !== 'alive') return;
-  const dx = f.x - x, dy = f.y - y;
-  const d = Math.hypot(dx, dy);
-  if (d > radius) return;
-  const push = (1 - d / radius) * 1.6 + 0.4;
-  const nx = d > 0.001 ? dx / d : rand(-1, 1), ny = d > 0.001 ? dy / d : rand(-1, 1);
-  f.vx = nx * push;
-  f.vy = ny * push;
-  f.scared = 1.2;
-  const [tx, ty] = randomSwimPoint();
-  f.tx = tx; f.ty = ty;
-}
-
-function updateFish(f, dt, now) {
-  f.gulp = Math.max(0, f.gulp - dt * 3);
-
-  if (f.state === 'popping') {
-    if (now - f.stateAt > 700) {
-      burst(f);
-      f.remove = true;
-      toast(`💥 ${f.name} ate more than ${CFG.MAX_MEALS_PER_MINUTE} meals in a minute and popped!`);
-    }
-    return;
-  }
-
-  if (f.state === 'starved') {
-    // Belly-up, float to the surface, then fade.
-    const k = clamp((now - f.stateAt) / 2000, 0, 1);
-    const ease = 1 - (1 - k) ** 2;
-    f.x = f.deadX + Math.sin(now / 700) * 0.01;
-    f.y = lerp(f.deadY, BOWL.WATER_Y + 0.06, ease);
-    f.tilt = lerp(f.tilt, 0, dt * 2);
-    if (now - f.stateAt > CFG.DEAD_FADE_MS) f.remove = true;
-    return;
-  }
-
-  // Hunger
-  if (f.fullness <= 0) {
-    f.fullness = 0;
-    die(f, now, 'starved');
-    toast(`🪦 ${f.name} starved.`);
-    return;
-  }
-
-  // Pick where to go: my food, or a wander target.
-  const meal = meals.find((m) => m.owner === f.id);
-  let tx = f.tx, ty = f.ty, speed = 0.18;
-  if (meal) {
-    tx = meal.x; ty = clamp(meal.y, BOWL.WATER_Y + 0.1, BOWL.GRAVEL_Y - 0.08);
-    speed = 0.45;
-    const reached = Math.hypot(f.x - meal.x, f.y - meal.y) < 0.07;
-    if (reached || now - meal.born > CFG.MEAL_TIMEOUT_MS) {
-      meal.dead = true;
-      meals = meals.filter((m) => m !== meal);
-      eat(f, now);
-      if (f.state !== 'alive') return;
-    }
-  } else {
-    f.retarget -= dt;
-    if (f.retarget <= 0 || Math.hypot(f.x - tx, f.y - ty) < 0.05) {
-      [f.tx, f.ty] = randomSwimPoint();
-      f.retarget = rand(3, 7);
-    }
-  }
-
-  // Fat fish are sluggish.
-  const fat = fatness(f, now);
-  speed *= f.speedMul / (1 + (fat - 1) * 0.9);
-  if (f.scared > 0) { f.scared -= dt; speed *= 2.2; }
-
-  const dx = tx - f.x, dy = ty - f.y;
-  const d = Math.hypot(dx, dy) || 1;
-  const arrive = clamp(d / 0.15, 0.25, 1);
-  const desVx = (dx / d) * speed * arrive;
-  const desVy = (dy / d) * speed * arrive * 0.7;
-  const turn = f.scared > 0 ? 1.2 : 2.2;
-  f.vx = lerp(f.vx, desVx, clamp(dt * turn, 0, 1));
-  f.vy = lerp(f.vy, desVy, clamp(dt * turn, 0, 1));
-
-  // Soft walls
-  if (!inSwimZone(f.x, f.y)) {
-    const nd = Math.hypot(f.x, f.y) || 1;
-    f.vx -= (f.x / nd) * dt * 1.5;
-    f.vy -= (f.y / nd) * dt * 1.5;
-    if (f.y < BOWL.WATER_Y + 0.12) f.vy += dt * 1.2;
-    if (f.y > BOWL.GRAVEL_Y - 0.1) f.vy -= dt * 1.2;
-  }
-
-  f.x += f.vx * dt;
-  f.y += f.vy * dt;
-  // Hard clamp so a fish can never leave the water.
-  const r = Math.hypot(f.x, f.y);
-  if (r > 0.86) { f.x *= 0.86 / r; f.y *= 0.86 / r; }
-  f.y = clamp(f.y, BOWL.WATER_Y + 0.07, BOWL.GRAVEL_Y - 0.05);
-
-  // Facing & tilt
-  if (Math.abs(f.vx) > 0.02) f.face = lerp(f.face, Math.sign(f.vx), clamp(dt * 5, 0, 1));
-  const targetTilt = clamp(Math.atan2(f.vy, Math.abs(f.vx) + 0.05), -0.5, 0.5);
-  f.tilt = lerp(f.tilt, targetTilt, clamp(dt * 4, 0, 1));
-
-  const spd = Math.hypot(f.vx, f.vy);
-  f.tail += dt * (5 + spd * 35);
-  f.fin += dt * (4 + spd * 12);
-}
-
-function drawFish(f, now) {
-  const pal = palette(f);
-  const [px, py] = toPx(f.x, f.y);
-  let L = fishLength(f);
-  let fat = fatness(f, now);
-  let alpha = 1;
-  let paleT = 0;
-  let bellyUp = false;
-  let wobble = 0;
-
-  if (f.state === 'popping') {
-    const k = clamp((now - f.stateAt) / 700, 0, 1);
-    fat += k * k * 1.6;
-    L *= 1 + k * 0.25;
-    wobble = Math.sin(now / 25) * 0.08 * k;
-  } else if (f.state === 'starved') {
-    const k = clamp((now - f.stateAt) / 1000, 0, 1);
-    paleT = k;
-    bellyUp = true;
-    const fadeK = clamp((now - f.stateAt - (CFG.DEAD_FADE_MS - 1000)) / 1000, 0, 1);
-    alpha = 1 - fadeK;
-  } else if (recentMeals(f, now) >= CFG.WARN_AT_MEALS) {
-    // One more meal and... jiggle as a warning.
-    wobble = Math.sin(now / 90) * 0.03;
-  }
-
-  const H = L * 0.27 * fat;
-  const col = (c) => (paleT > 0 ? pale(c, paleT) : c);
-  const flick = f.state === 'alive' ? Math.sin(f.tail) * L * 0.07 : f.state === 'popping' ? Math.sin(now / 30) * L * 0.1 : 0;
-  const gulpSquash = 1 + f.gulp * 0.12;
-
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(px, py);
-  ctx.rotate(f.tilt * Math.sign(f.face) + wobble);
-  ctx.scale(f.face, bellyUp ? -1 : 1);
-  ctx.scale(1, gulpSquash);
-
-  // Selection glow
-  if (f.id === selectedId && f.state === 'alive') {
-    ctx.save();
-    ctx.scale(1, 0.55);
-    ctx.beginPath();
-    ctx.arc(0, 0, L * 0.7, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255, 240, 200, 0.55)';
-    ctx.setLineDash([4, 5]);
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Tail fin
-  const tailBase = -L * 0.3;
-  ctx.beginPath();
-  ctx.moveTo(tailBase + L * 0.03, 0);
-  ctx.quadraticCurveTo(tailBase - L * 0.14, -L * 0.04 + flick * 0.5, tailBase - L * 0.32, -L * 0.22 + flick);
-  ctx.quadraticCurveTo(tailBase - L * 0.22, flick * 0.8, tailBase - L * 0.32, L * 0.22 + flick);
-  ctx.quadraticCurveTo(tailBase - L * 0.14, L * 0.04 + flick * 0.5, tailBase + L * 0.03, 0);
-  const tg = ctx.createLinearGradient(tailBase, 0, tailBase - L * 0.32, 0);
-  tg.addColorStop(0, col(pal.mid));
-  tg.addColorStop(1, col(pal.fin));
-  ctx.fillStyle = tg;
-  ctx.globalAlpha = alpha * 0.92;
-  ctx.fill();
-  ctx.globalAlpha = alpha;
-  // tail rays
-  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-  ctx.lineWidth = 0.8;
-  for (let i = -2; i <= 2; i++) {
-    ctx.beginPath();
-    ctx.moveTo(tailBase, 0);
-    ctx.lineTo(tailBase - L * 0.28, i * L * 0.07 + flick * 0.9);
-    ctx.stroke();
-  }
-
-  // Dorsal fin
-  const finWave = Math.sin(f.fin) * L * 0.015;
-  ctx.beginPath();
-  ctx.moveTo(-L * 0.12, -H * 0.82);
-  ctx.quadraticCurveTo(-L * 0.02 + finWave, -H * 1.1 - L * 0.12, L * 0.14, -H * 0.9);
-  ctx.closePath();
-  ctx.fillStyle = col(pal.fin);
-  ctx.globalAlpha = alpha * 0.9;
-  ctx.fill();
-  ctx.globalAlpha = alpha;
-
-  // Body
-  ctx.beginPath();
-  ctx.moveTo(L * 0.5, L * 0.01);
-  ctx.bezierCurveTo(L * 0.46, -H * 0.9, L * 0.05, -H * 1.08, -L * 0.28, -H * 0.3);
-  ctx.quadraticCurveTo(-L * 0.34, 0, -L * 0.28, H * 0.3);
-  ctx.bezierCurveTo(L * 0.05, H * 1.08, L * 0.46, H * 0.85, L * 0.5, L * 0.01);
-  ctx.closePath();
-  const bg = ctx.createLinearGradient(0, -H, 0, H);
-  bg.addColorStop(0, col(pal.top));
-  bg.addColorStop(0.45, col(pal.mid));
-  bg.addColorStop(1, col(pal.belly));
-  ctx.fillStyle = bg;
-  ctx.fill();
-
-  // Calico spots
-  if (pal.key === 'calico' && paleT < 1) {
-    ctx.save();
-    ctx.clip();
-    ctx.fillStyle = col('#1f2937');
-    ctx.globalAlpha = alpha * 0.75;
-    ctx.beginPath(); ctx.ellipse(-L * 0.05, -H * 0.35, L * 0.08, H * 0.3, 0.3, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(L * 0.2, H * 0.1, L * 0.05, H * 0.2, -0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = col('#ffffff');
-    ctx.beginPath(); ctx.ellipse(-L * 0.18, H * 0.2, L * 0.07, H * 0.25, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  // Sheen along the back
-  ctx.beginPath();
-  ctx.moveTo(L * 0.38, -H * 0.45);
-  ctx.quadraticCurveTo(L * 0.05, -H * 0.9, -L * 0.2, -H * 0.35);
-  ctx.strokeStyle = `rgba(255,255,255,${0.35 * (1 - paleT * 0.5)})`;
-  ctx.lineWidth = Math.max(1, L * 0.025);
-  ctx.lineCap = 'round';
-  ctx.stroke();
-
-  // Gill line
-  ctx.beginPath();
-  ctx.arc(L * 0.36, 0, H * 0.55, Math.PI * 0.7, Math.PI * 1.3);
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-  ctx.lineWidth = Math.max(0.8, L * 0.012);
-  ctx.stroke();
-
-  // Pectoral (side) fin, flapping
-  ctx.save();
-  ctx.translate(L * 0.14, H * 0.3);
-  ctx.rotate(0.5 + Math.sin(f.fin * 1.3) * 0.35);
-  ctx.beginPath();
-  ctx.ellipse(-L * 0.06, 0, L * 0.09, L * 0.035, 0, 0, Math.PI * 2);
-  ctx.fillStyle = col(pal.fin);
-  ctx.globalAlpha = alpha * 0.85;
-  ctx.fill();
-  ctx.restore();
-  ctx.globalAlpha = alpha;
-
-  // Eye
-  const ex = L * 0.32, ey = -H * 0.18;
-  const er = Math.max(2, L * 0.055);
-  ctx.beginPath();
-  ctx.arc(ex, ey, er, 0, Math.PI * 2);
-  ctx.fillStyle = '#fbfbf7';
-  ctx.fill();
-  if (f.state === 'starved') {
-    // X eyes
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = Math.max(1, er * 0.35);
-    ctx.beginPath();
-    ctx.moveTo(ex - er * 0.55, ey - er * 0.55); ctx.lineTo(ex + er * 0.55, ey + er * 0.55);
-    ctx.moveTo(ex + er * 0.55, ey - er * 0.55); ctx.lineTo(ex - er * 0.55, ey + er * 0.55);
-    ctx.stroke();
-  } else {
-    const pr = er * (f.state === 'popping' || f.scared > 0 ? 0.35 : 0.58);
-    ctx.beginPath();
-    ctx.arc(ex + er * 0.15, ey, pr, 0, Math.PI * 2);
-    ctx.fillStyle = '#111';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(ex + er * 0.3, ey - er * 0.3, er * 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-  }
-
-  // Mouth
-  ctx.beginPath();
-  ctx.arc(L * 0.48, L * 0.03, L * 0.025 * (1 + f.gulp), -0.4, 0.9);
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = Math.max(0.8, L * 0.012);
-  ctx.stroke();
-
-  ctx.restore();
-}
 
 // ---------------------------------------------------------------------------
 // Water, surface, glass
@@ -1129,36 +642,6 @@ function drawGlass() {
 }
 
 // ---------------------------------------------------------------------------
-// Frame
-// ---------------------------------------------------------------------------
-function render(now) {
-  const t = now / 1000;
-  ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
-  ctx.clearRect(0, 0, G.w, G.h);
-  ctx.drawImage(bgLayer, 0, 0, G.w, G.h);
-
-  // Everything inside the water
-  ctx.save();
-  waterClipPath(ctx);
-  ctx.clip();
-  drawWater(t);
-  ctx.drawImage(gravelLayer, 0, 0, G.w, G.h);
-  if (!prefersReducedMotion) drawLightRays(t);
-  drawAirstone();
-  drawPlants(t, 0);
-  drawMeals(now);
-  // Sort so dying fish render on top of the living.
-  const order = [...fishes].sort((a, b) => (a.state !== 'alive') - (b.state !== 'alive') || a.id - b.id);
-  for (const f of order) drawFish(f, now);
-  drawPlants(t, 1);
-  drawBubbles();
-  drawParticles();
-  drawRipples();
-  ctx.restore();
-
-  drawSurface(t);
-  drawGlass();
-}
 
 function drawAirstone() {
   const [px, py] = toPx(AIRSTONE_X, BOWL.GRAVEL_Y + 0.01);
@@ -1176,222 +659,1014 @@ function drawAirstone() {
   ctx.restore();
 }
 
-let lastFrame = performance.now();
-let lastDrain = Date.now();
-let lastSave = 0;
 
+// ---------------------------------------------------------------------------
+// Fish colors (keys match R.COLORS)
+// ---------------------------------------------------------------------------
+const PALETTES = {
+  orange: { top: '#c2410c', mid: '#ff8a2a', belly: '#ffe0b8', fin: '#ff9f43' },
+  gold:   { top: '#b7791f', mid: '#f6c343', belly: '#fff3c4', fin: '#ffd66b' },
+  silver: { top: '#5b6b7a', mid: '#b8c4cf', belly: '#f4f7fa', fin: '#d6dee6' },
+  red:    { top: '#9b1c1c', mid: '#e53e3e', belly: '#ffd1d1', fin: '#ff6b6b' },
+  calico: { top: '#1f2937', mid: '#f97316', belly: '#fff7ed', fin: '#fdba74' },
+  blue:   { top: '#1e3a8a', mid: '#3b82f6', belly: '#dbeafe', fin: '#93c5fd' },
+  pearl:  { top: '#a8a29e', mid: '#f5f0e8', belly: '#ffffff', fin: '#fde2cf' },
+  lemon:  { top: '#a16207', mid: '#facc15', belly: '#fefce8', fin: '#fde047' }
+};
+const paletteOf = (color) => PALETTES[color] || PALETTES.orange;
+
+// Blend a color toward grey (hungry fish fade).
+function greyed(hex, t) {
+  if (t <= 0) return hex;
+  const [r, g, b] = hexToRgb(hex);
+  const grey = 0.3 * r + 0.59 * g + 0.11 * b;
+  const m = (c) => Math.round(lerp(c, grey * 0.9 + 20, t));
+  return `rgb(${m(r)},${m(g)},${m(b)})`;
+}
+
+// Girth: 0.8× when empty, 1.0× at 50, 1.5× when full.
+function girthFor(f) {
+  const v = clamp(f, 0, 100);
+  return v <= 50 ? 0.8 + 0.2 * (v / 50) : 1 + 0.5 * ((v - 50) / 50);
+}
+
+// Same size for a fish on every phone, derived from its id.
+function sizeFor(id) {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return 0.9 + (h % 1000) / 1000 * 0.2;
+}
+
+// ---------------------------------------------------------------------------
+// Local fish animation. Positions are never synced; each phone animates its
+// own copy of the fish list.
+// ---------------------------------------------------------------------------
+const sims = new Map();  // fish id → animation state
+let meals = [];          // sinking flakes, each for one fish
+
+const BODY = 0.2;        // body length in bowl radii (before sizeFor)
+const fishLenN = (s) => BODY * s.size;
+const fishLenPx = (s) => fishLenN(s) * G.R;
+
+function emptiestPoint() {
+  let best = randomSwimPoint(), bestScore = -1;
+  for (let i = 0; i < 40; i++) {
+    const [x, y] = randomSwimPoint();
+    let score = Infinity;
+    for (const s of sims.values()) if (s.state === 'alive') score = Math.min(score, Math.hypot(s.x - x, s.y - y));
+    if (score > bestScore) { bestScore = score; best = [x, y]; }
+  }
+  return best;
+}
+
+// Destinations spread over the whole bowl, at different depths, away from
+// where the other fish are heading.
+const BANDS = [[BOWL.WATER_Y + 0.14, -0.22], [-0.22, 0.18], [0.18, BOWL.GRAVEL_Y - 0.12]];
+function pickDestination(sim) {
+  let best = null, bestScore = -1;
+  for (let i = 0; i < 8; i++) {
+    const [y0, y1] = BANDS[Math.floor(Math.random() * BANDS.length)];
+    const y = rand(y0, y1);
+    const hw = Math.sqrt(Math.max(0, BOWL.SWIM_R ** 2 - y * y)) * 0.9;
+    const x = rand(-hw, hw);
+    if (!inSwimZone(x, y, 0.03)) continue;
+    let score = Math.hypot(x - sim.x, y - sim.y) * 0.3;
+    let nearest = Infinity;
+    for (const o of sims.values()) {
+      if (o === sim || o.state !== 'alive') continue;
+      nearest = Math.min(nearest, Math.hypot(o.tx - x, o.ty - y), Math.hypot(o.x - x, o.y - y));
+    }
+    score += Math.min(nearest, 1);
+    if (score > bestScore) { bestScore = score; best = [x, y]; }
+  }
+  return best || randomSwimPoint();
+}
+
+function makeSim(id, data, now, spawned) {
+  const [x, y] = spawned ? emptiestPoint() : randomSwimPoint();
+  const sim = {
+    id, data, x, y,
+    vx: rand(-0.05, 0.05), vy: 0, tx: x, ty: y, retarget: 0,
+    face: Math.random() < 0.5 ? -1 : 1, tilt: 0,
+    tail: rand(0, 10), fin: rand(0, 10), phase: rand(0, 10),
+    size: sizeFor(id),
+    girth: girthFor(R.currentFullness(data, now)),
+    held: null, pending: 0, pendingDeath: null,
+    puffAt: -1e9, pauseUntil: 0, scared: 0,
+    state: 'alive', deathAt: 0, deathY: 0, cause: null,
+    bornAt: spawned ? performance.now() : -1e9
+  };
+  [sim.tx, sim.ty] = pickDestination(sim);
+  return sim;
+}
+
+const shownFullness = (sim, now) => clamp(sim.held ?? R.currentFullness(sim.data, now), 0, 100);
+
+function startDeath(sim, cause, announce) {
+  if (sim.state !== 'alive') return;
+  sim.state = 'dying';
+  sim.cause = cause;
+  sim.deathAt = performance.now();
+  sim.deathY = sim.y;
+  sim.held = null;
+  meals = meals.filter((m) => m.fishId !== sim.id);
+  if (selectedId === sim.id) deselect();
+  if (announce) toast(R.deathMessage(sim.data.name, cause));
+}
+
+// Flakes: just above one fish, or spread across the surface for everyone.
+function dropFlakes(targets, spread) {
+  const sorted = [...targets].sort((a, b) => a.x - b.x);
+  const hw = halfWidthAt(BOWL.WATER_Y) * 0.8;
+  sorted.forEach((sim, i) => {
+    const x = spread
+      ? -hw + (2 * hw) * ((i + 0.5) / sorted.length) + rand(-0.04, 0.04)
+      : clamp(sim.x + rand(-0.04, 0.04), -hw, hw);
+    meals.push({
+      fishId: sim.id, x, y: BOWL.WATER_Y + 0.02, vy: rand(0.05, 0.08), born: performance.now(),
+      flakes: Array.from({ length: 5 }, () => ({
+        dx: rand(-0.035, 0.035), dy: rand(-0.02, 0.02), r: rand(0.01, 0.016), rot: rand(0, Math.PI),
+        c: pick(['#c0392b', '#e67e22', '#d35400', '#f1c40f', '#8e5a2a'])
+      }))
+    });
+    ripples.push({ x, y: BOWL.WATER_Y, age: 0, life: 0.5, size: 0.03, surface: true });
+  });
+}
+
+function eatMeal(sim, meal) {
+  meals = meals.filter((m) => m !== meal);
+  sim.pending = Math.max(0, sim.pending - 1);
+  sim.held = sim.pending > 0 && sim.held != null ? sim.held + R.FEED_AMOUNT : null;
+  sim.puffAt = performance.now();
+  if (sim.pending === 0 && sim.pendingDeath) startDeath(sim, sim.pendingDeath, true);
+}
+
+function startle(sim, x, y, radius) {
+  if (sim.state !== 'alive') return;
+  const dx = sim.x - x, dy = sim.y - y;
+  const d = Math.hypot(dx, dy);
+  if (d > radius) return;
+  const push = (1 - d / radius) * 1.2 + 0.3;
+  sim.vx = (d > 0.001 ? dx / d : rand(-1, 1)) * push;
+  sim.vy = (d > 0.001 ? dy / d : rand(-1, 1)) * push;
+  sim.scared = 1;
+  [sim.tx, sim.ty] = pickDestination(sim);
+}
+
+function updateSim(sim, dt, now, perf) {
+  if (sim.state === 'dying') {
+    const t = perf - sim.deathAt;
+    const k = clamp(t / 2000, 0, 1);
+    sim.y = lerp(sim.deathY, BOWL.WATER_Y + 0.06, 1 - (1 - k) ** 2);
+    sim.x += Math.sin(perf / 700) * 0.004 * dt;
+    sim.tilt = lerp(sim.tilt, 0, clamp(dt * 3, 0, 1));
+    if (t > 3000) sim.state = 'gone';
+    return;
+  }
+
+  const full = shownFullness(sim, now);
+  const stuffed = full >= 90;
+  const hungry = full < 20;
+  let speed = 0.15 * (stuffed ? 0.45 : 1);
+  let tx = sim.tx, ty = sim.ty;
+
+  const meal = meals.find((m) => m.fishId === sim.id);
+  if (meal) {
+    tx = meal.x;
+    ty = clamp(meal.y, BOWL.WATER_Y + 0.1, BOWL.GRAVEL_Y - 0.08);
+    speed = stuffed ? 0.2 : 0.38;
+    if (Math.hypot(sim.x - meal.x, sim.y - meal.y) < 0.07 || perf - meal.born > 3500) eatMeal(sim, meal);
+  } else {
+    sim.retarget -= dt;
+    if (sim.retarget <= 0 || Math.hypot(sim.x - tx, sim.y - ty) < 0.06) {
+      [sim.tx, sim.ty] = pickDestination(sim);
+      sim.retarget = hungry ? rand(1.5, 3) : rand(4, 9);
+    }
+  }
+  if (sim.scared > 0) { sim.scared -= dt; speed *= 2; }
+
+  let dx = tx - sim.x, dy = ty - sim.y;
+  const d = Math.hypot(dx, dy) || 1;
+  dx /= d; dy /= d;
+  if (hungry) {
+    // A little erratic: wobble the heading.
+    const a = Math.sin(perf / 260 + sim.phase) * 0.9 + Math.sin(perf / 610 + sim.phase * 2) * 0.6;
+    const c = Math.cos(a), s = Math.sin(a);
+    [dx, dy] = [dx * c - dy * s, dx * s + dy * c];
+  }
+  const arrive = meal ? 1 : clamp(d / 0.15, 0.3, 1);
+  let desVx = dx * speed * arrive;
+  let desVy = dy * speed * arrive * 0.75;
+
+  // Keep about 1.5 body lengths from every other fish.
+  for (const o of sims.values()) {
+    if (o === sim || o.state !== 'alive') continue;
+    const ox = sim.x - o.x, oy = sim.y - o.y;
+    const od = Math.hypot(ox, oy) || 0.001;
+    const minD = 1.5 * (fishLenN(sim) + fishLenN(o)) / 2;
+    if (od < minD) {
+      const push = ((minD - od) / minD) * 0.35;
+      desVx += (ox / od) * push;
+      desVy += (oy / od) * push;
+    }
+  }
+
+  // Turn back smoothly near the glass, the waterline and the gravel.
+  const r = Math.hypot(sim.x, sim.y);
+  if (r > BOWL.SWIM_R - 0.1) {
+    const k = (r - (BOWL.SWIM_R - 0.1)) / 0.1;
+    desVx -= (sim.x / r) * 0.3 * k;
+    desVy -= (sim.y / r) * 0.3 * k;
+  }
+  if (sim.y < BOWL.WATER_Y + 0.16) desVy += 0.25 * (BOWL.WATER_Y + 0.16 - sim.y) / 0.08;
+  if (sim.y > BOWL.GRAVEL_Y - 0.14) desVy -= 0.25 * (sim.y - (BOWL.GRAVEL_Y - 0.14)) / 0.08;
+
+  if (perf < sim.pauseUntil) { desVx = 0; desVy = 0; }
+
+  const turn = sim.scared > 0 ? 1.2 : perf < sim.pauseUntil ? 5 : 2;
+  sim.vx = lerp(sim.vx, desVx, clamp(dt * turn, 0, 1));
+  sim.vy = lerp(sim.vy, desVy, clamp(dt * turn, 0, 1));
+  sim.x += sim.vx * dt;
+  sim.y += sim.vy * dt;
+  const rr = Math.hypot(sim.x, sim.y);
+  if (rr > 0.86) { sim.x *= 0.86 / rr; sim.y *= 0.86 / rr; }
+  sim.y = clamp(sim.y, BOWL.WATER_Y + 0.07, BOWL.GRAVEL_Y - 0.05);
+
+  if (Math.abs(sim.vx) > 0.015) sim.face = lerp(sim.face, Math.sign(sim.vx), clamp(dt * 4, 0, 1));
+  const targetTilt = clamp(Math.atan2(sim.vy, Math.abs(sim.vx) + 0.05), -0.45, 0.45);
+  sim.tilt = lerp(sim.tilt, targetTilt, clamp(dt * 4, 0, 1));
+  const spd = Math.hypot(sim.vx, sim.vy);
+  sim.tail += dt * (4 + spd * 35);
+  sim.fin += dt * (3 + spd * 12);
+
+  // Girth follows fullness smoothly (~0.5 s).
+  sim.girth = lerp(sim.girth, girthFor(full), 1 - Math.exp(-dt * 7));
+}
+
+function updateMeals(dt, perf) {
+  for (const m of meals) {
+    const floor = BOWL.GRAVEL_Y - 0.03;
+    if (m.y < floor) m.y = Math.min(floor, m.y + m.vy * dt);
+    m.x += Math.sin(perf / 600 + m.born) * 0.01 * dt;
+  }
+}
+
+function drawMeals(perf) {
+  for (const m of meals) {
+    for (const f of m.flakes) {
+      const [px, py] = toPx(m.x + f.dx, m.y + f.dy);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(f.rot + perf / 1500);
+      ctx.fillStyle = f.c;
+      const s = f.r * G.R;
+      ctx.fillRect(-s, -s * 0.5, s * 2, s);
+      ctx.restore();
+    }
+  }
+}
+
+function drawFish(sim, now, perf) {
+  const pal = paletteOf(sim.data.color);
+  const [px, py] = toPx(sim.x, sim.y);
+  const L = fishLenPx(sim);
+  const full = shownFullness(sim, now);
+  let alpha = clamp((perf - sim.bornAt) / 600, 0, 1);
+  let paleT = 0, roll = 1;
+  let greyT = sim.state === 'alive' ? clamp((20 - full) / 20, 0, 1) * 0.75 : 0;
+
+  if (sim.state === 'dying') {
+    const t = perf - sim.deathAt;
+    paleT = clamp(t / 800, 0, 1);
+    roll = Math.cos(clamp(t / 700, 0, 1) * Math.PI); // 1 → -1: rolls belly-up
+    alpha = 1 - clamp((t - 2000) / 1000, 0, 1);
+  }
+
+  // Quick "gulp" puff: ~10% bigger, then settle.
+  const pk = (perf - sim.puffAt) / 380;
+  const puff = pk >= 0 && pk <= 1 ? 1 + 0.1 * Math.sin(Math.PI * pk) : 1;
+  const g = sim.girth * puff;
+  const Ht = L * 0.27 * (1 + (g - 1) * 0.55);             // back
+  const Hb = L * 0.27 * g * (g > 1 ? 1 + (g - 1) * 0.35 : 1); // belly bulges more
+  const col = (c) => (paleT > 0 ? pale(c, paleT) : greyed(c, greyT));
+  const flick = sim.state === 'alive' ? Math.sin(sim.tail) * L * 0.07 : 0;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(px, py);
+  ctx.rotate(sim.tilt * Math.sign(sim.face));
+
+  // Soft glow when selected
+  if (sim.id === selectedId && sim.state === 'alive') {
+    const glow = ctx.createRadialGradient(0, 0, L * 0.2, 0, 0, L * 0.95);
+    glow.addColorStop(0, 'rgba(255, 244, 200, 0.45)');
+    glow.addColorStop(1, 'rgba(255, 244, 200, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, L * 0.95, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.scale(sim.face, roll);
+
+  // Tail fin (not scaled by girth)
+  const tailBase = -L * 0.3;
+  ctx.beginPath();
+  ctx.moveTo(tailBase + L * 0.03, 0);
+  ctx.quadraticCurveTo(tailBase - L * 0.14, -L * 0.04 + flick * 0.5, tailBase - L * 0.32, -L * 0.22 + flick);
+  ctx.quadraticCurveTo(tailBase - L * 0.22, flick * 0.8, tailBase - L * 0.32, L * 0.22 + flick);
+  ctx.quadraticCurveTo(tailBase - L * 0.14, L * 0.04 + flick * 0.5, tailBase + L * 0.03, 0);
+  const tg = ctx.createLinearGradient(tailBase, 0, tailBase - L * 0.32, 0);
+  tg.addColorStop(0, col(pal.mid));
+  tg.addColorStop(1, col(pal.fin));
+  ctx.fillStyle = tg;
+  ctx.globalAlpha = alpha * 0.92;
+  ctx.fill();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 0.8;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(tailBase, 0);
+    ctx.lineTo(tailBase - L * 0.28, i * L * 0.07 + flick * 0.9);
+    ctx.stroke();
+  }
+
+  // Dorsal fin
+  const finWave = Math.sin(sim.fin) * L * 0.015;
+  ctx.beginPath();
+  ctx.moveTo(-L * 0.12, -Ht * 0.82);
+  ctx.quadraticCurveTo(-L * 0.02 + finWave, -Ht * 1.1 - L * 0.12, L * 0.14, -Ht * 0.9);
+  ctx.closePath();
+  ctx.fillStyle = col(pal.fin);
+  ctx.globalAlpha = alpha * 0.9;
+  ctx.fill();
+  ctx.globalAlpha = alpha;
+
+  // Body: height and belly curve follow girth
+  ctx.beginPath();
+  ctx.moveTo(L * 0.5, L * 0.01);
+  ctx.bezierCurveTo(L * 0.46, -Ht * 0.9, L * 0.05, -Ht * 1.08, -L * 0.28, -Ht * 0.3);
+  ctx.quadraticCurveTo(-L * 0.34, 0, -L * 0.28, Hb * 0.28);
+  ctx.bezierCurveTo(-L * 0.02, Hb * 1.12, L * 0.44, Hb * 0.95, L * 0.5, L * 0.01);
+  ctx.closePath();
+  const bg = ctx.createLinearGradient(0, -Ht, 0, Hb);
+  bg.addColorStop(0, col(pal.top));
+  bg.addColorStop(0.45, col(pal.mid));
+  bg.addColorStop(1, col(pal.belly));
+  ctx.fillStyle = bg;
+  ctx.fill();
+
+  if (sim.data.color === 'calico' && paleT < 1) {
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = alpha * 0.75;
+    ctx.fillStyle = col('#1f2937');
+    ctx.beginPath(); ctx.ellipse(-L * 0.05, -Ht * 0.35, L * 0.08, Ht * 0.3, 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(L * 0.2, Hb * 0.1, L * 0.05, Hb * 0.2, -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = col('#ffffff');
+    ctx.beginPath(); ctx.ellipse(-L * 0.18, Hb * 0.2, L * 0.07, Hb * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Sheen along the back
+  ctx.beginPath();
+  ctx.moveTo(L * 0.38, -Ht * 0.45);
+  ctx.quadraticCurveTo(L * 0.05, -Ht * 0.9, -L * 0.2, -Ht * 0.35);
+  ctx.strokeStyle = `rgba(255,255,255,${0.35 * (1 - paleT * 0.5) * (1 - greyT * 0.5)})`;
+  ctx.lineWidth = Math.max(1, L * 0.025);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Stuffed: a stretched-belly highlight
+  if (g > 1.35 && sim.state === 'alive') {
+    ctx.beginPath();
+    ctx.ellipse(L * 0.08, Hb * 0.55, L * 0.16, Hb * 0.22, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fill();
+  }
+
+  // Gill line
+  ctx.beginPath();
+  ctx.arc(L * 0.36, 0, Math.min(Ht, Hb) * 0.55, Math.PI * 0.7, Math.PI * 1.3);
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = Math.max(0.8, L * 0.012);
+  ctx.stroke();
+
+  // Pectoral fin
+  ctx.save();
+  ctx.translate(L * 0.14, Hb * 0.3);
+  ctx.rotate(0.5 + Math.sin(sim.fin * 1.3) * 0.35);
+  ctx.beginPath();
+  ctx.ellipse(-L * 0.06, 0, L * 0.09, L * 0.035, 0, 0, Math.PI * 2);
+  ctx.fillStyle = col(pal.fin);
+  ctx.globalAlpha = alpha * 0.85;
+  ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha = alpha;
+
+  // Eye (fixed size)
+  const ex = L * 0.32, ey = -L * 0.27 * 0.2;
+  const er = Math.max(2, L * 0.055);
+  ctx.beginPath();
+  ctx.arc(ex, ey, er, 0, Math.PI * 2);
+  ctx.fillStyle = '#fbfbf7';
+  ctx.fill();
+  if (sim.state === 'dying') {
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = Math.max(1, er * 0.35);
+    ctx.beginPath();
+    ctx.moveTo(ex - er * 0.55, ey - er * 0.55); ctx.lineTo(ex + er * 0.55, ey + er * 0.55);
+    ctx.moveTo(ex + er * 0.55, ey - er * 0.55); ctx.lineTo(ex - er * 0.55, ey + er * 0.55);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(ex + er * 0.15, ey, er * (sim.scared > 0 ? 0.35 : 0.58), 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(ex + er * 0.3, ey - er * 0.3, er * 0.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+
+  // Mouth
+  ctx.beginPath();
+  ctx.arc(L * 0.48, L * 0.03, L * 0.025 * (puff > 1.02 ? 1.8 : 1), -0.4, 0.9);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = Math.max(0.8, L * 0.012);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Frame
+// ---------------------------------------------------------------------------
+function render(now, perf) {
+  const t = perf / 1000;
+  ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
+  ctx.clearRect(0, 0, G.w, G.h);
+  ctx.drawImage(bgLayer, 0, 0, G.w, G.h);
+
+  ctx.save();
+  waterClipPath(ctx);
+  ctx.clip();
+  drawWater(t);
+  ctx.drawImage(gravelLayer, 0, 0, G.w, G.h);
+  if (!prefersReducedMotion) drawLightRays(t);
+  drawAirstone();
+  drawPlants(t, 0);
+  drawMeals(perf);
+  const order = [...sims.values()].sort((a, b) => (a.state !== 'alive') - (b.state !== 'alive') || (a.id === selectedId) - (b.id === selectedId));
+  for (const s of order) drawFish(s, now, perf);
+  drawPlants(t, 1);
+  drawBubbles();
+  drawParticles();
+  drawRipples();
+  ctx.restore();
+
+  drawSurface(t);
+  drawGlass();
+}
+
+let lastPerf = performance.now();
+let lastSecond = 0;
 function tick() {
-  const perfNow = performance.now();
-  const dt = clamp((perfNow - lastFrame) / 1000, 0, 0.1);
-  lastFrame = perfNow;
+  const perf = performance.now();
+  const dt = clamp((perf - lastPerf) / 1000, 0, 0.1);
+  lastPerf = perf;
   const now = Date.now();
 
-  // Hunger uses wall-clock time so it keeps counting while the tab is hidden.
-  const drainSec = (now - lastDrain) / 1000;
-  lastDrain = now;
-  for (const f of fishes) if (f.state === 'alive') f.fullness -= drainSec * CFG.DRAIN_PER_SEC;
-
-  for (const f of fishes) updateFish(f, dt, now);
-  const removed = fishes.filter((f) => f.remove);
-  if (removed.length) {
-    fishes = fishes.filter((f) => !f.remove);
-    if (removed.some((f) => f.id === selectedId)) hideInfo();
-    updateUI();
-    save();
-  }
-  updateMeals(dt, now);
+  for (const s of sims.values()) updateSim(s, dt, now, perf);
+  for (const [id, s] of sims) if (s.state === 'gone') sims.delete(id);
+  updateMeals(dt, perf);
   updateBubbles(dt);
   updateEffects(dt);
+  render(now, perf);
+  updateCard(now, perf);
 
-  render(now);
-  if (selectedId != null) updateInfo(now);
-
-  if (now - lastSave > CFG.SAVE_EVERY_MS) { save(); lastSave = now; }
+  if (perf - lastSecond > 1000) {
+    lastSecond = perf;
+    everySecond(now);
+  }
   requestAnimationFrame(tick);
 }
 
 // ---------------------------------------------------------------------------
-// UI
+// App state
 // ---------------------------------------------------------------------------
-function livingCount() {
-  return fishes.filter((f) => f.state === 'alive').length;
-}
-// A dying fish still takes up its spot until it's gone.
-function occupiedCount() {
-  return fishes.length;
+const KEYS = { room: 'fishbowl.room', nick: 'fishbowl.nickname', cache: 'fishbowl.cache' };
+function stored(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function store(key, value) {
+  try { value == null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* private mode */ }
 }
 
-function updateUI() {
-  const n = occupiedCount();
-  countEl.textContent = `${n} / ${CFG.MAX_FISH} fish`;
-  const full = n >= CFG.MAX_FISH;
-  addBtn.disabled = full;
-  fullMsg.hidden = !full;
-  feedBtn.disabled = livingCount() === 0;
+const params = new URLSearchParams(location.search);
+const DEMO = params.has('demo');
+
+let nickname = R.cleanNickname(stored(KEYS.nick));
+let roomCode = null;
+let room = null;
+let api = null;          // bowl.js (or the demo stand-in) once loaded
+let apiLoading = null;
+let apiFailed = false;
+let stopWatching = null;
+let online = navigator.onLine;
+let selectedId = null;
+let lastTouch = 0;       // for the 5-second card timeout
+const seenLog = new Set();
+let housekeepingAt = 0;
+
+const logKey = (e) => `${e.at}|${e.by}|${e.fishId}`;
+
+function loadApi() {
+  if (DEMO) return Promise.resolve(api);
+  if (api) return Promise.resolve(api);
+  if (!apiLoading) {
+    apiLoading = import('./bowl.js').then((m) => {
+      api = m;
+      apiFailed = false;
+      refreshControls();
+      return m;
+    }, (e) => {
+      apiLoading = null;
+      apiFailed = true;
+      refreshControls();
+      throw e;
+    });
+  }
+  return apiLoading;
 }
 
+const canWrite = () => DEMO || (online && !!api && !!room);
+
+// Bring the local fish in line with the latest bowl.
+function applyRoom(next) {
+  const now = Date.now();
+  room = next;
+  const fishMap = next.fish || {};
+
+  // 1. New feed-log entries → flakes (and "held" fullness until eaten).
+  const fresh = [];
+  for (const e of next.feedLog || []) {
+    const k = logKey(e);
+    if (seenLog.has(k)) continue;
+    seenLog.add(k);
+    if (now - e.at < 30000) fresh.push(e);
+  }
+  fresh.sort((a, b) => a.at - b.at);
+  const drops = [];
+  for (const e of fresh) {
+    const targets = e.fishId == null
+      ? [...sims.values()].filter((s) => s.state === 'alive' && fishMap[s.id])
+      : [sims.get(e.fishId)].filter((s) => s && s.state === 'alive');
+    for (const s of targets) {
+      if (s.held == null) s.held = clamp(R.currentFullness(s.data, now), 0, 100);
+      s.pending += 1;
+    }
+    if (targets.length) drops.push([targets, e.fishId == null]);
+    if (e.by !== nickname) toast(R.describeFeed(e));
+  }
+
+  // 2. Fish that arrived, changed, or died.
+  for (const [id, data] of Object.entries(fishMap)) {
+    let sim = sims.get(id);
+    if (!sim) {
+      if (!R.isAlive(data, now)) continue;
+      sim = makeSim(id, data, now, true);
+      sims.set(id, sim);
+      if (now - data.addedAt < 60000) {
+        toast(`${data.name} joined the bowl!`);
+        for (let i = 0; i < 8; i++) {
+          particles.push({ kind: 'bubble', x: sim.x + rand(-0.05, 0.05), y: sim.y + rand(0, 0.06), vx: rand(-0.1, 0.1), vy: rand(-0.2, 0), r: rand(0.006, 0.013), rot: 0, vr: 0, age: 0, life: rand(0.6, 1.2), buoyant: true });
+        }
+      } else {
+        sim.bornAt = -1e9;
+      }
+      continue;
+    }
+    sim.data = data;
+    if (sim.state === 'alive' && data.diedAt != null) {
+      const cause = data.cause || 'starved';
+      const recent = now - data.diedAt < 60000;
+      if (sim.pending > 0 && cause === 'overfed') sim.pendingDeath = cause;
+      else startDeath(sim, cause, recent);
+    }
+  }
+  for (const sim of sims.values()) {
+    if (!fishMap[sim.id] && sim.state === 'alive') {
+      startDeath(sim, R.currentFullness(sim.data, now) <= 0 ? 'starved' : 'overfed', false);
+    }
+  }
+  for (const [targets, spread] of drops) dropFlakes(targets.filter((s) => s.state === 'alive'), spread);
+
+  refreshControls();
+  refreshActivity(now);
+  if (!$('sheet').hidden && sheetKind === 'history') showHistory();
+}
+
+function everySecond(now) {
+  if (!room) return;
+  // Starvation happens by the formula, even with nobody feeding.
+  for (const s of sims.values()) {
+    if (s.state === 'alive' && s.data.diedAt == null && R.currentFullness(s.data, now) <= 0) startDeath(s, 'starved', true);
+  }
+  if (R.needsHousekeeping(room, now) && canWrite() && now - housekeepingAt > 15000) {
+    housekeepingAt = now;
+    api.housekeeping(roomCode).catch(() => {});
+  }
+  refreshControls();
+  refreshActivity(now);
+}
+
+// ---------------------------------------------------------------------------
+// Screens
+// ---------------------------------------------------------------------------
+function show(screen) {
+  $('welcome').hidden = screen !== 'welcome';
+  $('bowlUi').hidden = screen !== 'bowl';
+}
+
+function showWelcome(message = '') {
+  if (stopWatching) { stopWatching(); stopWatching = null; }
+  roomCode = null;
+  room = null;
+  sims.clear();
+  meals = [];
+  deselect();
+  show('welcome');
+  $('nickInput').value = nickname === R.DEFAULT_NICKNAME ? '' : nickname;
+  $('welcomeMsg').textContent = message;
+  setWelcomeBusy(false);
+}
+
+function setWelcomeBusy(busy, label) {
+  for (const id of ['createBtn', 'joinBtn']) $(id).disabled = busy;
+  $('createBtn').textContent = busy && label === 'create' ? 'Creating…' : 'Create a bowl';
+  $('joinBtn').textContent = busy && label === 'join' ? 'Joining…' : 'Join a bowl';
+}
+
+function saveNicknameFrom(input) {
+  nickname = R.cleanNickname(input.value);
+  store(KEYS.nick, nickname === R.DEFAULT_NICKNAME ? null : nickname);
+}
+
+function openBowl(code) {
+  roomCode = code;
+  store(KEYS.room, code);
+  show('bowl');
+  $('roomCode').textContent = code;
+  sims.clear();
+  meals = [];
+  seenLog.clear();
+  room = null;
+
+  // Show the last known bowl straight away (works offline too).
+  try {
+    const cached = JSON.parse(stored(KEYS.cache) || 'null');
+    if (cached && cached.code === code) applyRoom(cached.room);
+  } catch { /* ignore a broken cache */ }
+  refreshControls();
+  connect();
+}
+
+function connect() {
+  if (DEMO || !roomCode || stopWatching) return;
+  const code = roomCode;
+  loadApi().then((m) => {
+    if (roomCode !== code || stopWatching) return;
+    stopWatching = m.watchRoom(code, (data) => {
+      if (data === null) {
+        store(KEYS.room, null);
+        showWelcome('No bowl with that code');
+        return;
+      }
+      store(KEYS.cache, JSON.stringify({ code, room: data }));
+      applyRoom(data);
+    }, () => {
+      if (stopWatching) { stopWatching(); stopWatching = null; }
+      refreshControls();
+      setTimeout(connect, 5000);
+    });
+  }, () => { /* offline: the 'online' event retries */ });
+}
+
+function refreshControls() {
+  const now = Date.now();
+  const living = room ? R.livingFish(room, now).length : 0;
+  const offline = !DEMO && (!online || apiFailed);
+  $('count').textContent = `${living} / ${R.MAX_FISH} fish`;
+  $('offline').hidden = !offline;
+  const full = living >= R.MAX_FISH;
+  $('addBtn').disabled = !canWrite() || full;
+  $('fullMsg').hidden = !full;
+  $('feedBtn').disabled = !canWrite() || living === 0;
+  $('fcFeed').disabled = !canWrite();
+}
+
+function refreshActivity(now) {
+  if (room) $('activity').textContent = R.activityLine(room, now);
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+// Firebase refuses everything until the rules are published and Anonymous
+// sign-in is on (README, Firebase setup steps 3 and 6).
+function setupProblem(e) {
+  const code = (e && e.code) || '';
+  if (code === 'permission-denied') return 'The bowl database isn’t set up yet: the Firestore rules need to be published.';
+  if (/auth\/(operation-not-allowed|admin-restricted-operation|configuration-not-found)/.test(code)) return 'Sign-in isn’t set up yet: Anonymous sign-in needs to be turned on in Firebase.';
+  if (code === 'auth/unauthorized-domain') return 'This web address isn’t allowed yet: add it to Firebase’s authorized domains.';
+  return '';
+}
+
+function explain(e) {
+  if (setupProblem(e)) return setupProblem(e);
+  if (e && e.code === 'full') return 'Bowl is full';
+  if (e && e.code === 'gone') return 'Too late — that fish is gone';
+  if (e && e.code === 'empty') return 'There are no fish to feed';
+  if (e && e.code === 'missing') return 'This bowl no longer exists';
+  return navigator.onLine ? 'Something went wrong. Please try again.' : 'Offline — try again when you’re connected';
+}
+
+async function addFish() {
+  if (!canWrite()) return;
+  try { await api.addFish(roomCode, nickname); } catch (e) { toast(explain(e)); }
+}
+
+async function feed(fishId = null) {
+  if (!canWrite()) return;
+  try { await api.feed(roomCode, nickname, fishId); } catch (e) { toast(explain(e)); }
+}
+
+async function share() {
+  if (DEMO) { toast('This is a demo bowl. Create a real one to share it.'); return; }
+  const url = `${location.origin}${location.pathname}?room=${roomCode}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Fishbowl', text: `Join my fishbowl! Code: ${roomCode}`, url });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('Link copied');
+  } catch {
+    openSheet('Share this link', `<p class="sheet-note">Send this link to friends:</p><input class="field-input" readonly value="${url}">`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Selecting one fish
+// ---------------------------------------------------------------------------
+function select(sim) {
+  selectedId = sim.id;
+  lastTouch = performance.now();
+  sim.pauseUntil = lastTouch + 1200;
+  $('fcSwatch').style.background = `linear-gradient(180deg, ${paletteOf(sim.data.color).top}, ${paletteOf(sim.data.color).mid} 50%, ${paletteOf(sim.data.color).belly})`;
+  $('fcName').textContent = `${sim.data.name} · ${sim.data.color}`;
+  $('fishCard').hidden = false;
+  cardValuesAt = 0;
+  updateCard(Date.now(), lastTouch);
+}
+
+function deselect() {
+  selectedId = null;
+  $('fishCard').hidden = true;
+}
+
+let cardValuesAt = 0;
+function updateCard(now, perf) {
+  if (selectedId == null) return;
+  const sim = sims.get(selectedId);
+  if (!sim || sim.state !== 'alive' || perf - lastTouch > 5000) { deselect(); return; }
+  const card = $('fishCard');
+  const [px, py] = toPx(sim.x, sim.y);
+  const w = card.offsetWidth, h = card.offsetHeight;
+  const L = fishLenPx(sim);
+  let top = py - L * 0.7 - h - 8;
+  if (top < 120) top = py + L * 0.7 + 8;
+  const left = clamp(px - w / 2, 12, G.w - w - 12);
+  card.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  if (perf - cardValuesAt > 250) {
+    cardValuesAt = perf;
+    const full = clamp(R.currentFullness(sim.data, now), 0, 100);
+    $('fcBar').style.width = `${full}%`;
+    $('fcBar').style.background = full < 20 ? 'var(--danger)' : full >= 90 ? 'var(--warn)' : 'var(--accent-2)';
+    $('fcPct').textContent = `${full} / 100 full`;
+    $('fcMood').textContent = full >= 90 ? 'Stuffed! Careful' : full < 20 ? 'Hungry!' : full < 40 ? 'Peckish' : 'Happy';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sheets: feeding history and the menu
+// ---------------------------------------------------------------------------
+let sheetKind = null;
+function openSheet(title, html, kind = null) {
+  sheetKind = kind;
+  $('sheetTitle').textContent = title;
+  $('sheetBody').innerHTML = html;
+  $('sheet').hidden = false;
+}
+function closeSheet() {
+  $('sheet').hidden = true;
+  sheetKind = null;
+}
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function formatWhen(ms) {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return time;
+  const y = new Date(today); y.setDate(today.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return `Yesterday ${time}`;
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+}
+
+function showHistory() {
+  const log = (room && room.feedLog) || [];
+  const items = log.length
+    ? log.map((e) => `<li><span>${escapeHtml(R.describeFeed(e))}</span><time>${escapeHtml(formatWhen(e.at))}</time></li>`).join('')
+    : '<li class="empty">Nobody has fed the fish yet.</li>';
+  openSheet('Feeding history', `<ul class="history">${items}</ul>`, 'history');
+}
+
+function showMenu() {
+  openSheet('Menu', `
+    <label class="field">
+      <span>What should friends see you as?</span>
+      <input id="menuNick" class="field-input" maxlength="20" autocomplete="nickname" placeholder="Someone" value="${escapeHtml(nickname === R.DEFAULT_NICKNAME ? '' : nickname)}">
+      <small>A nickname, not your full name</small>
+    </label>
+    <button id="menuSave" class="btn">Save nickname</button>
+    <p class="sheet-note">Bowl code: <b>${escapeHtml(roomCode || '')}</b></p>
+    <button id="menuLeave" class="btn btn-quiet">${DEMO ? 'Leave the demo' : 'Leave bowl'}</button>
+    <p class="sheet-note small">Leaving only forgets the bowl on this phone. It keeps existing for your friends.</p>
+  `, 'menu');
+  $('menuSave').addEventListener('click', () => {
+    saveNicknameFrom($('menuNick'));
+    closeSheet();
+    toast(`You’re “${nickname}”`);
+  });
+  $('menuLeave').addEventListener('click', () => {
+    closeSheet();
+    if (DEMO) { location.href = location.pathname; return; }
+    store(KEYS.room, null);
+    store(KEYS.cache, null);
+    showWelcome();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Toasts
+// ---------------------------------------------------------------------------
 function toast(msg) {
+  const box = $('toasts');
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = msg;
-  toastsEl.appendChild(el);
-  while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
+  box.appendChild(el);
+  while (box.children.length > 3) box.firstChild.remove();
   setTimeout(() => {
     el.classList.add('out');
     setTimeout(() => el.remove(), 450);
   }, 3200);
 }
 
-function showInfo(f) {
-  selectedId = f.id;
-  const pal = palette(f);
-  $('infoSwatch').style.background = `linear-gradient(180deg, ${pal.top}, ${pal.mid} 50%, ${pal.belly})`;
-  $('infoName').textContent = f.name;
-  infoEl.hidden = false;
-  updateInfo(Date.now());
-}
-function hideInfo() {
-  selectedId = null;
-  infoEl.hidden = true;
-}
-let lastInfoRender = 0;
-function updateInfo(now) {
-  if (now - lastInfoRender < 200) return;
-  lastInfoRender = now;
-  const f = fishes.find((x) => x.id === selectedId);
-  if (!f) return hideInfo();
-  const pal = palette(f);
-  const full = clamp(f.fullness, 0, 100);
-  $('infoSub').textContent = `${pal.label} · ${formatAge(now - f.born)}`;
-  $('infoPct').textContent = `${Math.round(full)} / 100`;
-  const bar = $('infoBar');
-  bar.style.width = `${full}%`;
-  bar.style.background = full < 20 ? '#ff5a4e' : '#3fc1b0';
-  const recent = recentMeals(f, now);
-  let mood;
-  if (f.state === 'popping') mood = '😵 Uh oh…';
-  else if (f.state !== 'alive') mood = '🪦 Resting in peace';
-  else if (full < 15) mood = '😫 Starving! Feed me!';
-  else if (full < 35) mood = '😟 Getting hungry';
-  else if (recent >= CFG.MAX_MEALS_PER_MINUTE) mood = '🤢 About to burst. One more bite and it pops!';
-  else if (recent >= CFG.WARN_AT_MEALS) mood = '😣 Bloated. Ease off the food.';
-  else if (full > 70) mood = '😌 Nicely full';
-  else mood = '🙂 Happy and swimming';
-  $('infoMood').textContent = mood;
-  const mealsEl = $('infoMeals');
-  const secsLeft = recent ? Math.ceil((CFG.BINGE_WINDOW_MS - (now - Math.min(...f.meals.filter((t) => now - t < CFG.BINGE_WINDOW_MS)))) / 1000) : 0;
-  mealsEl.innerHTML = `Meals this minute: <b>${recent} / ${CFG.MAX_MEALS_PER_MINUTE}</b>` +
-    (recent ? ` · oldest clears in ${secsLeft}s` : '');
-  mealsEl.classList.toggle('warn', recent >= CFG.WARN_AT_MEALS);
-}
-
-addBtn.addEventListener('click', () => {
-  if (occupiedCount() >= CFG.MAX_FISH) return;
-  const f = newFish(Date.now());
-  fishes.push(f);
-  ripples.push({ x: f.x, y: BOWL.WATER_Y, age: 0, life: 0.6, size: 0.06, surface: true });
-  for (let i = 0; i < 8; i++) {
-    particles.push({ kind: 'bubble', x: f.x + rand(-0.05, 0.05), y: f.y + rand(0, 0.08), vx: rand(-0.1, 0.1), vy: rand(-0.2, 0), r: rand(0.006, 0.014), rot: 0, vr: 0, age: 0, life: rand(0.6, 1.2), buoyant: true });
-  }
-  toast(`🐟 Say hi to ${f.name}!`);
-  updateUI();
-  save();
-});
-
-feedBtn.addEventListener('click', () => {
+// ---------------------------------------------------------------------------
+// Demo bowl (?demo): local only, no Firebase, made-up people and fish.
+// ---------------------------------------------------------------------------
+function startDemo() {
   const now = Date.now();
-  const alive = fishes.filter((f) => f.state === 'alive');
-  if (!alive.length) return;
-  for (const f of alive) dropMeal(f, now);
-  feedBtn.animate?.([{ transform: 'scale(0.94)' }, { transform: 'scale(1)' }], { duration: 180 });
+  const ids = ['demoa1', 'demob2', 'democ3', 'demod4', 'demoe5'];
+  const spec = [['Pickle', 'gold', 94], ['Captain', 'orange', 70], ['Mochi', 'calico', 50], ['Biscuit', 'silver', 32], ['Noodle', 'red', 12]];
+  const fish = {};
+  ids.forEach((id, i) => {
+    const [name, color, full] = spec[i];
+    fish[id] = { name, color, addedAt: now - (i + 1) * 3600e3, addedBy: ['Sam', 'Priya', 'Alex'][i % 3], fullness: full, fullnessAt: now, diedAt: null, cause: null };
+  });
+  const demoRoom = {
+    lastFedAt: now - 3 * 60e3, lastFedBy: 'Alex',
+    feedLog: [
+      { by: 'Alex', at: now - 3 * 60e3, fishId: 'demoa1', fishName: 'Pickle' },
+      { by: 'Priya', at: now - 47 * 60e3, fishId: null, fishName: null },
+      { by: 'Sam', at: now - 5 * 3600e3, fishId: null, fishName: null }
+    ],
+    fish
+  };
+  const later = (fn) => new Promise((resolve, reject) => setTimeout(() => {
+    try { const res = fn(); applyRoom(res.room); resolve(res); } catch (e) { reject(e); }
+  }, 150));
+  api = {
+    addFish: () => later(() => R.addFish(room, { id: R.makeFishId(crypto.getRandomValues(new Uint8Array(10))), by: nickname, now: Date.now() })),
+    feed: (_code, _nick, fishId) => later(() => R.feed(room, { fishId, by: nickname, now: Date.now() })),
+    housekeeping: () => later(() => R.recordDeaths(room, Date.now()))
+  };
+  roomCode = 'DEMO';
+  show('bowl');
+  $('roomCode').textContent = 'DEMO';
+  applyRoom(demoRoom);
+  toast('Demo bowl: nothing here is shared or saved.');
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+$('createBtn').addEventListener('click', async () => {
+  saveNicknameFrom($('nickInput'));
+  $('welcomeMsg').textContent = '';
+  setWelcomeBusy(true, 'create');
+  try {
+    const m = await loadApi();
+    const code = await m.createRoom();
+    openBowl(code);
+  } catch (e) {
+    setWelcomeBusy(false);
+    $('welcomeMsg').textContent = setupProblem(e) || 'Couldn’t create a bowl. Check your connection and try again.';
+  }
 });
 
-$('infoClose').addEventListener('click', hideInfo);
+$('joinForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  saveNicknameFrom($('nickInput'));
+  const code = R.normalizeRoomCode($('codeInput').value);
+  if (!code) { $('welcomeMsg').textContent = 'Room codes are 6 letters and numbers, like K7QM3P.'; return; }
+  $('welcomeMsg').textContent = '';
+  setWelcomeBusy(true, 'join');
+  try {
+    const m = await loadApi();
+    if (await m.roomExists(code)) { openBowl(code); return; }
+    $('welcomeMsg').textContent = 'No bowl with that code';
+  } catch (e) {
+    $('welcomeMsg').textContent = setupProblem(e) || 'Couldn’t reach the bowl. Check your connection and try again.';
+  }
+  setWelcomeBusy(false);
+});
+
+$('nickInput').addEventListener('change', () => saveNicknameFrom($('nickInput')));
+$('addBtn').addEventListener('click', addFish);
+$('feedBtn').addEventListener('click', () => feed(null));
+$('fcFeed').addEventListener('click', () => {
+  lastTouch = performance.now();
+  if (selectedId) feed(selectedId);
+});
+$('shareBtn').addEventListener('click', share);
+$('menuBtn').addEventListener('click', showMenu);
+$('activity').addEventListener('click', showHistory);
+$('sheetClose').addEventListener('click', closeSheet);
+$('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) closeSheet(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeSheet(); deselect(); } });
 
 canvas.addEventListener('pointerdown', (e) => {
+  if ($('bowlUi').hidden) return;
   const [x, y] = toNorm(e.clientX, e.clientY);
-  const now = Date.now();
-
-  // Tap a fish → info card
+  // Generous tap area: fish move and fingers are big.
   let best = null, bestD = Infinity;
-  for (const f of fishes) {
-    if (f.state !== 'alive') continue;
-    const d = Math.hypot((f.x - x) * G.R, (f.y - y) * G.R);
-    const hit = fishLength(f) * 0.6 + 10;
-    if (d < hit && d < bestD) { best = f; bestD = d; }
+  for (const s of sims.values()) {
+    if (s.state !== 'alive') continue;
+    const d = Math.hypot((s.x - x) * G.R, (s.y - y) * G.R);
+    if (d < Math.max(44, fishLenPx(s) * 0.9) && d < bestD) { best = s; bestD = d; }
   }
-  if (best) { showInfo(best); return; }
-
-  const inBowl = x * x + y * y < 1 && y > BOWL.OPEN_Y && y < BOWL.BASE_Y;
-  if (!inBowl) { hideInfo(); return; }
-
-  // Tap the glass/water → ripple and startle nearby fish
-  const cy = Math.max(y, BOWL.WATER_Y + 0.02);
-  ripples.push({ x, y: cy, age: 0, life: 0.7, size: 0.02 });
-  for (const f of fishes) startle(f, x, cy, 0.65);
-  if (navigator.vibrate) navigator.vibrate(8);
-  hideInfo();
-  void now;
+  if (best) { select(best); return; }
+  deselect();
+  if (x * x + y * y < 1 && y > BOWL.WATER_Y && y < BOWL.BASE_Y) {
+    ripples.push({ x, y, age: 0, life: 0.7, size: 0.02 });
+    for (const s of sims.values()) startle(s, x, y, 0.5);
+  }
 });
 
 window.addEventListener('resize', resize);
-
-// ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
-function save() {
-  try {
-    const data = {
-      v: 1,
-      savedAt: Date.now(),
-      nextId,
-      fish: fishes
-        .filter((f) => f.state === 'alive')
-        .map((f) => ({
-          id: f.id, name: f.name, pal: f.pal, size: f.size,
-          fullness: f.fullness, x: f.x, y: f.y, born: f.born, meals: f.meals
-        }))
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (_) { /* storage unavailable: the bowl just won't persist */ }
-}
-
-function load() {
-  let data = null;
-  try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) { data = null; }
-  if (!data || !Array.isArray(data.fish)) return;
-  const now = Date.now();
-  const awaySec = Math.max(0, (now - (data.savedAt || now)) / 1000);
-  nextId = data.nextId || 1;
-  const starved = [];
-  for (const d of data.fish.slice(0, CFG.MAX_FISH)) {
-    const fullness = d.fullness - awaySec * CFG.DRAIN_PER_SEC;
-    if (fullness <= 0) { starved.push(d.name); continue; }
-    const f = makeFish({ ...d, fullness, meals: (d.meals || []).filter((t) => now - t < CFG.BINGE_WINDOW_MS) });
-    if (!inSwimZone(f.x, f.y)) [f.x, f.y] = randomSwimPoint();
-    fishes.push(f);
-    nextId = Math.max(nextId, f.id + 1);
-  }
-  if (starved.length) {
-    const names = starved.length === 1 ? starved[0] : `${starved.slice(0, -1).join(', ')} and ${starved.at(-1)}`;
-    setTimeout(() => toast(`🪦 While you were away, ${names} starved.`), 600);
-  }
-}
-
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
-window.addEventListener('pagehide', save);
+window.addEventListener('online', () => { online = true; refreshControls(); connect(); });
+window.addEventListener('offline', () => { online = false; refreshControls(); });
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 resize();
-load();
-updateUI();
-if (!fishes.length) setTimeout(() => toast('Tap “Add fish” to get started. Tap a fish to meet it.'), 400);
 requestAnimationFrame(tick);
 
+if (DEMO) {
+  startDemo();
+} else {
+  const linked = R.normalizeRoomCode(params.get('room'));
+  if (params.has('room')) history.replaceState(null, '', location.pathname);
+  const saved = R.normalizeRoomCode(stored(KEYS.room));
+  if (linked) {
+    // A share link: go straight to that bowl.
+    openBowl(linked);
+  } else if (saved) {
+    openBowl(saved);
+  } else {
+    showWelcome(params.has('room') ? 'That link has an invalid room code.' : '');
+  }
+}
+
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(() => {});
-  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
