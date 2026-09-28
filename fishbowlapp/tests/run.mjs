@@ -56,7 +56,7 @@ const fishOf = (room, id) => room.fish[id];
 console.log('\nRules');
 
 test('constants match the spec', () => {
-  eq(R.START_FULLNESS, 50); eq(R.FEED_AMOUNT, 5); eq(R.SECONDS_PER_POINT, 864); eq(R.MAX_FISH, 10);
+  eq(R.START_FULLNESS, 50); eq(R.FEED_AMOUNT, 5); eq(R.SECONDS_PER_POINT, 864); eq(R.MAX_FISH, 15);
 });
 
 test('a new fish starts at 50', () => {
@@ -185,27 +185,27 @@ test('Feed all records starved fish instead of feeding them', () => {
   eq(res.fed.length, 1);
 });
 
-test('the bowl holds at most 10 living fish', () => {
-  const { room } = bowlWith(10);
+test('the bowl holds at most 15 living fish', () => {
+  const { room } = bowlWith(15);
   throwsCode(() => R.addFish(room, { id: nextId(), by: 'Sam', now: T0 }), 'full');
 });
 
 test('dead fish are cleared out when a fish is added, freeing their spot', () => {
-  let { room, ids } = bowlWith(10);
+  let { room, ids } = bowlWith(15);
   for (let i = 0; i < 11; i++) room = R.feed(room, { fishId: ids[0], by: 'Sam', now: T0 }).room;
   const res = R.addFish(room, { id: nextId(), by: 'Sam', now: T0 + 1000 });
-  eq(Object.keys(res.room.fish).length, 10);
+  eq(Object.keys(res.room.fish).length, 15);
   ok(!res.room.fish[ids[0]], 'dead fish removed');
 });
 
 test('fish names are unique in the bowl', () => {
-  const { room } = bowlWith(10);
+  const { room } = bowlWith(15);
   const names = Object.values(room.fish).map((f) => f.name);
-  eq(new Set(names).size, 10);
+  eq(new Set(names).size, 15);
   // Force the random picker to always choose the first free name.
   let r = R.emptyRoom();
-  for (let i = 0; i < 10; i++) r = R.addFish(r, { id: nextId(), by: 'Sam', now: T0, rand: () => 0 }).room;
-  eq(new Set(Object.values(r.fish).map((f) => f.name)).size, 10);
+  for (let i = 0; i < 15; i++) r = R.addFish(r, { id: nextId(), by: 'Sam', now: T0, rand: () => 0 }).room;
+  eq(new Set(Object.values(r.fish).map((f) => f.name)).size, 15);
 });
 
 test('a name frees up once its fish is gone', () => {
@@ -248,7 +248,7 @@ test('12 fish types, each with at least two colors', () => {
 
 test('every new fish gets a valid type and a color that type comes in', () => {
   let room = R.emptyRoom();
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 12; i++) {
     const { room: next, fish } = R.addFish(room, { id: `t${i}`, by: 'Sam', now: T0, rand: R.seededRandom(`t${i}`) });
     const type = R.FISH_TYPES.find((t) => t.key === fish.type);
     ok(type, `bad type ${fish.type}`);
@@ -256,7 +256,32 @@ test('every new fish gets a valid type and a color that type comes in', () => {
     room = next;
   }
   const types = new Set(Object.values(room.fish).map((f) => f.type));
-  eq(types.size, 10, 'a bowl of 10 fish gets 10 different types');
+  eq(types.size, 12, 'the first 12 fish get 12 different types');
+});
+
+test('feedsUntilPop: 2 at fullness 91–95, 1 at 96–100', () => {
+  for (let f = 91; f <= 95; f++) eq(R.feedsUntilPop(f), 2, `at ${f}`);
+  for (let f = 96; f <= 100; f++) eq(R.feedsUntilPop(f), 1, `at ${f}`);
+  eq(R.feedsUntilPop(90), 3);
+  eq(R.feedsUntilPop(50), 11);
+  // It matches what really happens: at 96, the next feed kills.
+  let room = { ...R.emptyRoom(), fish: { a: { name: 'Pickle', color: 'gold', addedAt: T0, addedBy: 'Sam', fullness: 96, fullnessAt: T0, diedAt: null, cause: null } } };
+  eq(R.feed(room, { fishId: 'a', by: 'Sam', now: T0 }).died.length, 1);
+  room.fish.a.fullness = 95;
+  room = R.feed(room, { fishId: 'a', by: 'Sam', now: T0 }).room;
+  ok(R.isAlive(room.fish.a, T0), 'survives one feed at 95');
+  eq(R.feed(room, { fishId: 'a', by: 'Sam', now: T0 }).died.length, 1, 'second feed from 95 kills');
+});
+
+test('age in hours, and the party hat at exactly 12 hours', () => {
+  const f = { addedAt: T0 };
+  eq(R.ageHours(f, T0 + 59 * MIN), 0);
+  eq(R.ageLabel(f, T0 + 59 * MIN), 'Just arrived');
+  eq(R.ageLabel(f, T0 + HOUR), '1 hour old');
+  eq(R.ageLabel(f, T0 + 7 * HOUR + 30 * MIN), '7 hours old');
+  ok(!R.hasPartyHat(f, T0 + 12 * HOUR - 1), 'no hat just before 12 h');
+  ok(R.hasPartyHat(f, T0 + 12 * HOUR), 'hat at exactly 12 h');
+  ok(R.hasPartyHat(f, T0 + 40 * HOUR), 'keeps the hat');
 });
 
 test('fish saved before types existed count as goldfish', () => {

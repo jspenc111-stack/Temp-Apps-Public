@@ -9,13 +9,14 @@
 export const START_FULLNESS = 50;
 export const FEED_AMOUNT = 5;
 export const SECONDS_PER_POINT = 864;   // -1 fullness every 14.4 minutes: 100 → 0 in 24 hours
-export const MAX_FISH = 10;
+export const MAX_FISH = 15;
 
 export const MAX_FULLNESS = 100;        // above this a fish dies of overfeeding
 export const FEED_LOG_MAX = 20;
 export const TEXT_MAX = 20;             // nicknames and fish names
 export const CLEANUP_AFTER_MS = 60 * 1000;
 export const DEFAULT_NICKNAME = 'Someone';
+export const PARTY_HAT_HOURS = 12;      // a fish gets a party hat at this age
 
 const MS_PER_POINT = SECONDS_PER_POINT * 1000;
 
@@ -105,6 +106,26 @@ export function currentFullness(fish, now) {
   if (fish.diedAt != null) return fish.fullness;
   const elapsed = Math.max(0, now - fish.fullnessAt);
   return fish.fullness - Math.floor(elapsed / MS_PER_POINT);
+}
+
+// How many more feeds until this fish pops: 1 means the very next feed
+// kills it (fullness 96–100), 2 means the one after that (91–95).
+export function feedsUntilPop(fullness) {
+  return Math.floor((MAX_FULLNESS - fullness) / FEED_AMOUNT) + 1;
+}
+
+// Age in whole hours since the fish was added.
+export function ageHours(fish, now) {
+  return Math.max(0, Math.floor((now - fish.addedAt) / 3600000));
+}
+
+export function hasPartyHat(fish, now) {
+  return now - fish.addedAt >= PARTY_HAT_HOURS * 3600000;
+}
+
+export function ageLabel(fish, now) {
+  const h = ageHours(fish, now);
+  return h < 1 ? 'Just arrived' : `${h} hour${h === 1 ? '' : 's'} old`;
 }
 
 // The moment a fish's fullness reaches 0 if nobody feeds it.

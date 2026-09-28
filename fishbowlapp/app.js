@@ -83,6 +83,9 @@ function makeLayer() {
   return [c, l];
 }
 
+const BOWL_WIDTH_SHARE = 0.92;
+const BOWL_MAX_RADIUS = 440;
+
 function resize() {
   G.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   G.w = window.innerWidth;
@@ -92,7 +95,9 @@ function resize() {
 
   const topSpace = 132, bottomSpace = 130;
   const avail = G.h - topSpace - bottomSpace;
-  G.R = Math.max(80, Math.min(G.w * 0.46, avail * 0.56, 380));
+  // As big as fits: about 92% of the width on a phone, as tall as fits
+  // between the header and the buttons, capped on big screens.
+  G.R = Math.max(80, Math.min(G.w * BOWL_WIDTH_SHARE / 2, avail * 0.56, BOWL_MAX_RADIUS));
   G.cx = G.w / 2;
   G.cy = topSpace + avail * 0.56;
 
@@ -292,7 +297,7 @@ function buildGravel() {
 let plants = [];
 function buildPlants() {
   const rnd = mulberry32(99);
-  const spots = [{ x: -0.5, n: 5, h: 0.95, hue: 130 }, { x: 0.46, n: 4, h: 0.75, hue: 105 }];
+  const spots = [{ x: -0.6, n: 5, h: 0.95, hue: 130 }, { x: 0.46, n: 4, h: 0.75, hue: 105 }];
   plants = spots.map((s) => ({
     x: s.x,
     blades: Array.from({ length: s.n }, (_, i) => ({
@@ -339,14 +344,39 @@ function drawPlants(t, layer) {
 let bubbles = [];
 let bubbleTimer = 0;
 const AIRSTONE_X = 0.16;
+
+// A small stone castle on the gravel, left of centre, about 15% of the
+// bowl's width. Units are bowl radii, like everything inside the bowl.
+const CASTLE = {
+  x0: -0.39, x1: -0.09,             // outer edges (towers included)
+  wallX0: -0.35, wallX1: -0.13, wallTop: 0.4,
+  towerL: { x0: -0.39, x1: -0.3, top: 0.28 },
+  towerR: { x0: -0.17, x1: -0.09, top: 0.33 },
+  archX0: -0.285, archX1: -0.195, archTop: 0.47,
+  base: BOWL.GRAVEL_Y + 0.035         // sunk a little into the gravel
+};
+const CASTLE_ARCH_Y = 0.53;          // fish swim through the doorway at this height
+const castleCenter = (CASTLE.x0 + CASTLE.x1) / 2;
+// Top of the castle at x (or null if x isn't over the castle).
+function castleTopAt(x) {
+  const c = CASTLE;
+  if (x < c.x0 || x > c.x1) return null;
+  if (x <= c.towerL.x1) return c.towerL.top;
+  if (x >= c.towerR.x0) return c.towerR.top;
+  return c.wallTop;
+}
+const insideCastle = (x, y, m = 0) => x > CASTLE.x0 - m && x < CASTLE.x1 + m && y > (castleTopAt(clamp(x, CASTLE.x0, CASTLE.x1)) ?? 9) - m;
 function updateBubbles(dt) {
   bubbleTimer -= dt;
   if (bubbleTimer <= 0) {
     bubbleTimer = rand(0.08, 0.35);
-    const fromStone = Math.random() < 0.8;
+    const pickSource = Math.random();
+    const fromStone = pickSource < 0.55;
+    const fromCastle = !fromStone && pickSource < 0.85;   // bubbles from a castle tower top
+    const towerX = (CASTLE.towerR.x0 + CASTLE.towerR.x1) / 2;
     bubbles.push({
-      x: fromStone ? AIRSTONE_X + rand(-0.015, 0.015) : rand(-0.6, 0.6),
-      y: BOWL.GRAVEL_Y - 0.02,
+      x: fromStone ? AIRSTONE_X + rand(-0.015, 0.015) : fromCastle ? towerX + rand(-0.01, 0.01) : rand(-0.6, 0.6),
+      y: fromCastle ? CASTLE.towerR.top - 0.01 : BOWL.GRAVEL_Y - 0.02,
       r: rand(0.006, fromStone ? 0.02 : 0.012),
       vy: rand(0.18, 0.3),
       ph: rand(0, Math.PI * 2)
@@ -655,6 +685,127 @@ function drawGlass() {
 
 // ---------------------------------------------------------------------------
 
+function drawCastle(t) {
+  const c = CASTLE;
+  const P = (x, y) => toPx(x, y);
+  const R = G.R;
+  // Outline of the castle with the doorway cut out (even-odd fill).
+  const outline = new Path2D();
+  const rect = (x0, y0, x1, y1) => { const [a, b] = P(x0, y0), [e, f] = P(x1, y1); outline.rect(a, b, e - a, f - b); };
+  const crenels = (x0, x1, top) => {
+    const n = Math.max(2, Math.round((x1 - x0) / 0.032));
+    const w = (x1 - x0) / (n * 2 - 1);
+    for (let i = 0; i < n; i++) rect(x0 + i * 2 * w, top - 0.028, x0 + i * 2 * w + w, top + 0.002);
+  };
+  rect(c.wallX0, c.wallTop, c.wallX1, c.base);
+  rect(c.towerL.x0, c.towerL.top, c.towerL.x1, c.base);
+  rect(c.towerR.x0, c.towerR.top, c.towerR.x1, c.base);
+  crenels(c.wallX0 + 0.005, c.wallX1 - 0.005, c.wallTop);
+  crenels(c.towerL.x0, c.towerL.x1, c.towerL.top);
+  crenels(c.towerR.x0, c.towerR.x1, c.towerR.top);
+  // Merge the overlapping shapes, then cut the arch out.
+  ctx.save();
+  const [ax0, ay] = P(c.archX0, c.archTop), [ax1] = P(c.archX1, c.archTop), [, by] = P(0, c.base);
+  const arch = new Path2D();
+  const r = (ax1 - ax0) / 2;
+  arch.moveTo(ax0, by);
+  arch.lineTo(ax0, ay + r);
+  arch.arc(ax0 + r, ay + r, r, Math.PI, 0);
+  arch.lineTo(ax1, by);
+  arch.closePath();
+  const allButArch = new Path2D();
+  allButArch.rect(0, 0, G.w, G.h);
+  allButArch.addPath(arch);
+  ctx.clip(allButArch, 'evenodd');          // everything except the doorway
+
+  const [, topY] = P(0, c.towerL.top - 0.03);
+  const stone = ctx.createLinearGradient(0, topY, 0, by);
+  stone.addColorStop(0, '#a3a9ae');
+  stone.addColorStop(0.7, '#737b82');
+  stone.addColorStop(1, '#3d4348');         // darker where it sinks into the gravel
+  ctx.fillStyle = stone;
+  ctx.fill(outline, 'nonzero');
+
+  // Light from the upper left: lit left faces, shaded right faces.
+  ctx.save();
+  ctx.clip(outline, 'nonzero');
+  const side = ctx.createLinearGradient(P(c.x0, 0)[0], 0, P(c.x1, 0)[0], 0);
+  side.addColorStop(0, 'rgba(255,255,255,0.14)');
+  side.addColorStop(0.5, 'rgba(255,255,255,0)');
+  side.addColorStop(1, 'rgba(0,0,0,0.22)');
+  ctx.fillStyle = side;
+  ctx.fillRect(P(c.x0, 0)[0], topY, (c.x1 - c.x0) * R, by - topY);
+  // Stone blocks
+  ctx.strokeStyle = 'rgba(40, 44, 48, 0.28)';
+  ctx.lineWidth = Math.max(0.7, R * 0.004);
+  for (let row = 0, y = c.towerL.top + 0.02; y < c.base; y += 0.035, row++) {
+    const [, py] = P(0, y);
+    ctx.beginPath(); ctx.moveTo(P(c.x0, 0)[0], py); ctx.lineTo(P(c.x1, 0)[0], py); ctx.stroke();
+    for (let x = c.x0 + (row % 2) * 0.03; x < c.x1; x += 0.06) {
+      const [px] = P(x, 0);
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py + 0.035 * R); ctx.stroke();
+    }
+  }
+  // Moss
+  ctx.fillStyle = 'rgba(80, 140, 70, 0.45)';
+  for (let i = 0; i < 9; i++) {
+    const x = c.x0 + ((i * 0.37) % 1) * (c.x1 - c.x0), y = c.base - 0.02 - ((i * 0.53) % 1) * 0.09;
+    const [px, py] = P(x, y);
+    ctx.beginPath(); ctx.ellipse(px, py, R * 0.012, R * 0.007, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  // Tower windows
+  ctx.fillStyle = '#23272b';
+  for (const tw of [c.towerL, c.towerR]) {
+    const [wx, wy] = P((tw.x0 + tw.x1) / 2, tw.top + 0.07);
+    ctx.beginPath();
+    ctx.ellipse(wx, wy, R * 0.008, R * 0.018, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Doorway rim, so the arch reads as a hole in the wall
+  ctx.save();
+  ctx.lineWidth = Math.max(1, R * 0.008);
+  ctx.strokeStyle = 'rgba(30, 34, 38, 0.55)';
+  ctx.beginPath();
+  ctx.moveTo(ax0, by); ctx.lineTo(ax0, ay + r); ctx.arc(ax0 + r, ay + r, r, Math.PI, 0); ctx.lineTo(ax1, by);
+  ctx.stroke();
+  ctx.restore();
+
+  // Flag on the left tower
+  const [fx, fy] = P((c.towerL.x0 + c.towerL.x1) / 2, c.towerL.top - 0.028);
+  const poleH = R * 0.09;
+  ctx.strokeStyle = '#4a4f54';
+  ctx.lineWidth = Math.max(1, R * 0.006);
+  ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - poleH); ctx.stroke();
+  const wave = Math.sin(t * 2.5) * R * 0.008;
+  ctx.fillStyle = '#e0413a';
+  ctx.beginPath();
+  ctx.moveTo(fx, fy - poleH);
+  ctx.quadraticCurveTo(fx + R * 0.03, fy - poleH + wave, fx + R * 0.06, fy - poleH + R * 0.018 + wave);
+  ctx.quadraticCurveTo(fx + R * 0.03, fy - poleH + R * 0.03 - wave, fx, fy - poleH + R * 0.036);
+  ctx.closePath();
+  ctx.fill();
+
+  // Gravel heaped against the base, so it sits in the gravel
+  const [gx0, gy] = P(c.x0 - 0.02, BOWL.GRAVEL_Y + 0.02), [gx1] = P(c.x1 + 0.02, 0);
+  const heap = ctx.createLinearGradient(0, gy - R * 0.02, 0, by + R * 0.02);
+  heap.addColorStop(0, 'rgba(120, 104, 84, 0.95)');
+  heap.addColorStop(1, 'rgba(70, 60, 48, 0.95)');
+  ctx.fillStyle = heap;
+  ctx.beginPath();
+  ctx.moveTo(gx0, by + R * 0.02);
+  for (let i = 0; i <= 12; i++) {
+    const x = gx0 + (gx1 - gx0) * (i / 12);
+    ctx.lineTo(x, gy + Math.sin(i * 1.7) * R * 0.006);
+  }
+  ctx.lineTo(gx1, by + R * 0.02);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function drawAirstone() {
   const [px, py] = toPx(AIRSTONE_X, BOWL.GRAVEL_Y + 0.01);
   const r = G.R * 0.05;
@@ -699,7 +850,9 @@ const sims = new Map();  // fish id → animation state
 let meals = [];          // sinking flakes, each for one fish
 
 const BODY = 0.2;        // body length in bowl radii (before sizeFor)
-const fishLenN = (s) => BODY * s.size;
+// All fish are drawn this much bigger than the original design (one knob to tweak).
+const FISH_BASE_SCALE = 1.25;
+const fishLenN = (s) => BODY * s.size * FISH_BASE_SCALE;
 const fishLenPx = (s) => fishLenN(s) * G.R;
 
 // New fish plop in from above: only for fish added in the last 10 seconds,
@@ -734,7 +887,7 @@ function pickDestination(sim) {
     const hw = Math.sqrt(Math.max(0, BOWL.SWIM_R ** 2 - y * y)) * 0.9;
     // A bottom dweller also likes to hang around near the glass.
     const x = bottomDweller && Math.random() < 0.5 ? Math.sign(rand(-1, 1)) * rand(hw * 0.7, hw) : rand(-hw, hw);
-    if (!inSwimZone(x, y, 0.03)) continue;
+    if (!inSwimZone(x, y, 0.03) || insideCastle(x, y, 0.06)) continue;
     let score = Math.hypot(x - sim.x, y - sim.y) * 0.3;
     let nearest = Infinity;
     for (const o of sims.values()) {
@@ -762,6 +915,10 @@ function makeSim(id, data, now, spawned) {
     size: sizeFor(id) * art.size,
     fshow: full, fvel: 0,          // shown fullness, springs toward the real one
     chompAt: -1e9, burst: 0,
+    held: null, pending: 0, pendingDeath: null,   // eat-then-grow
+    route: null,                                  // castle trip (through the arch / hiding)
+    hatSeen: R.hasPartyHat(data, now),            // party hat already on when we first saw it
+    burpAt: 0,
     puffAt: -1e9, pauseUntil: 0, scared: 0,
     state: 'alive', deathAt: 0, deathY: 0, cause: null,
     bornAt: spawned && !plop ? perf : -1e9,
@@ -815,8 +972,10 @@ function splash(x) {
   for (let i = 0; i < 3; i++) ripples.push({ x, y: BOWL.WATER_Y, age: -i * 0.18, life: 0.9, size: 0.03, grow: 0.35, surface: true });
 }
 
-// Fish always show the latest fullness straight away (and animate toward it).
-const shownFullness = (sim, now) => clamp(R.currentFullness(sim.data, now), 0, 100);
+// A fish only LOOKS fuller once it has eaten: while it has flakes to reach,
+// it keeps showing its old fullness (`held`). The saved data is already new.
+const shownFullness = (sim, now) => clamp(sim.held ?? R.currentFullness(sim.data, now), 0, 100);
+const MEAL_TIMEOUT_MS = 4000;       // eats (and grows) by then even if far away
 
 function startDeath(sim, cause, announce) {
   if (sim.state !== 'alive') return;
@@ -824,6 +983,8 @@ function startDeath(sim, cause, announce) {
   sim.cause = cause;
   sim.deathAt = performance.now();
   sim.deathY = sim.y;
+  sim.held = null;
+  sim.pending = 0;
   meals = meals.filter((m) => m.fishId !== sim.id);
   if (selectedId === sim.id) deselect();
   if (announce) toast(R.deathMessage(sim.data.name, cause));
@@ -848,11 +1009,20 @@ function dropFlakes(targets, spread) {
   });
 }
 
-// The flakes are just for show: the fish's size already changed when the
-// feed arrived, so eating them only opens its mouth.
+// Reaching the food: the flake disappears into its mouth, a gulp, and then
+// the fish grows to its new size. An overfed fish pops right after.
 function eatMeal(sim, meal) {
   meals = meals.filter((m) => m !== meal);
-  sim.chompAt = performance.now();
+  const perf = performance.now();
+  sim.chompAt = perf;
+  sim.puffAt = perf;
+  sim.pending = Math.max(0, sim.pending - 1);
+  sim.held = sim.pending > 0 && sim.held != null ? sim.held + R.FEED_AMOUNT : null;
+  if (sim.pending === 0 && sim.pendingDeath) {
+    const cause = sim.pendingDeath;
+    sim.pendingDeath = null;
+    startDeath(sim, cause, true);
+  }
 }
 
 // Overfed fish swell up for a moment, then pop (starved fish float belly-up).
@@ -886,6 +1056,21 @@ function startle(sim, x, y, radius) {
   sim.vy = (d > 0.001 ? dy / d : rand(-1, 1)) * push;
   sim.scared = 1;
   [sim.tx, sim.ty] = pickDestination(sim);
+}
+
+// A short trip past the castle: through the arched doorway to the other
+// side, or into the space behind it for a little rest ("hiding").
+function castleTrip(sim) {
+  const c = CASTLE;
+  const fromLeft = sim.x < castleCenter;
+  const near = fromLeft ? c.x0 - 0.09 : c.x1 + 0.09;
+  const far = fromLeft ? c.x1 + 0.1 : c.x0 - 0.1;
+  const [ex, ey] = pickDestination(sim);
+  if (Math.random() < 0.3) {
+    const hideX = rand(c.wallX0 + 0.04, c.wallX1 - 0.04);
+    return [[near, 0.42, 0], [hideX, 0.44, rand(1500, 3500)], [near, 0.4, 0], [ex, ey, 0]];
+  }
+  return [[near, CASTLE_ARCH_Y, 0], [far, CASTLE_ARCH_Y, 0], [ex, ey, 0]];
 }
 
 function updateSim(sim, dt, now, perf) {
@@ -927,11 +1112,23 @@ function updateSim(sim, dt, now, perf) {
     tx = meal.x;
     ty = clamp(meal.y, BOWL.WATER_Y + 0.1, BOWL.GRAVEL_Y - 0.08);
     speed = (stuffed ? 0.2 : 0.38) * Math.max(0.7, swim.speed);
-    if (Math.hypot(sim.x - meal.x, sim.y - meal.y) < 0.07 || perf - meal.born > 3500) eatMeal(sim, meal);
+    if (Math.hypot(sim.x - meal.x, sim.y - meal.y) < 0.07 || perf - meal.born > MEAL_TIMEOUT_MS) eatMeal(sim, meal);
+  } else if (sim.route) {
+    // Castle trip: through the arch, or a little rest hiding behind it.
+    const [rx, ry, rest] = sim.route[0];
+    tx = rx; ty = ry;
+    if (Math.hypot(sim.x - rx, sim.y - ry) < 0.045) {
+      if (rest) { sim.pauseUntil = perf + rest; sim.route[0][2] = 0; }
+      else if (perf >= sim.pauseUntil) { sim.route.shift(); if (!sim.route.length) sim.route = null; }
+    }
   } else {
     sim.retarget -= dt;
     if (sim.retarget <= 0 || Math.hypot(sim.x - tx, sim.y - ty) < 0.06) {
-      [sim.tx, sim.ty] = pickDestination(sim);
+      if (!swim.bottom && !stuffed && Math.random() < 0.12) {
+        sim.route = castleTrip(sim);
+      } else {
+        [sim.tx, sim.ty] = pickDestination(sim);
+      }
       sim.retarget = hungry ? rand(1.5, 3) : rand(4, 9) * (swim.dart ? 0.5 : 1) * (swim.calm ? 1.4 : 1);
     }
   }
@@ -953,12 +1150,15 @@ function updateSim(sim, dt, now, perf) {
   let desVx = dx * speed * arrive;
   let desVy = dy * speed * arrive * 0.75;
 
-  // Keep about 1.5 body lengths from every other fish.
+  // Keep about 1.5 body lengths from every other fish, easing toward 1 body
+  // length when the bowl is crowded (up to 15 fish).
+  const crowd = clamp((livingSims - 6) / (R.MAX_FISH - 6), 0, 1);
+  const spacing = lerp(1.5, 1.0, crowd);
   for (const o of sims.values()) {
     if (o === sim || o.state !== 'alive') continue;
     const ox = sim.x - o.x, oy = sim.y - o.y;
     const od = Math.hypot(ox, oy) || 0.001;
-    const minD = 1.5 * (fishLenN(sim) + fishLenN(o)) / 2;
+    const minD = spacing * (fishLenN(sim) + fishLenN(o)) / 2;
     if (od < minD) {
       const push = ((minD - od) / minD) * 0.35;
       desVx += (ox / od) * push;
@@ -974,8 +1174,16 @@ function updateSim(sim, dt, now, perf) {
     desVy -= (sim.y / r) * 0.3 * k;
   }
   if (sim.y < BOWL.WATER_Y + 0.16) desVy += 0.25 * (BOWL.WATER_Y + 0.16 - sim.y) / 0.08;
-  const floorY = swim.bottom ? BOWL.GRAVEL_Y - 0.08 : BOWL.GRAVEL_Y - 0.14;
+  const floorY = sim.route ? BOWL.GRAVEL_Y - 0.05 : swim.bottom ? BOWL.GRAVEL_Y - 0.08 : BOWL.GRAVEL_Y - 0.14;
   if (sim.y > floorY) desVy -= 0.25 * (sim.y - floorY) / 0.08;
+
+  // The castle is in the way: swim around it (castle trips go through or behind).
+  if (!sim.route && insideCastle(sim.x, sim.y, 0.07)) {
+    const top = castleTopAt(clamp(sim.x, CASTLE.x0, CASTLE.x1));
+    const k = clamp((sim.y - (top - 0.07)) / 0.1, 0, 1.5);
+    desVy -= 0.45 * k;
+    desVx += Math.sign(sim.x - castleCenter || 1) * 0.25 * k;
+  }
 
   if (perf < sim.pauseUntil) { desVx = 0; desVy = 0; }
 
@@ -986,7 +1194,7 @@ function updateSim(sim, dt, now, perf) {
   sim.y += sim.vy * dt;
   const rr = Math.hypot(sim.x, sim.y);
   if (rr > 0.86) { sim.x *= 0.86 / rr; sim.y *= 0.86 / rr; }
-  sim.y = clamp(sim.y, BOWL.WATER_Y + 0.07, BOWL.GRAVEL_Y - 0.05);
+  sim.y = clamp(sim.y, BOWL.WATER_Y + 0.07, BOWL.GRAVEL_Y - 0.04);
 
   if (Math.abs(sim.vx) > 0.015) sim.face = lerp(sim.face, Math.sign(sim.vx), clamp(dt * 4, 0, 1));
   const targetTilt = clamp(Math.atan2(sim.vy, Math.abs(sim.vx) + 0.05), -0.45, 0.45) * (swim.bottom ? 0.4 : 1);
@@ -998,7 +1206,7 @@ function updateSim(sim, dt, now, perf) {
 
 function updateMeals(dt, perf) {
   for (const m of meals) {
-    const floor = BOWL.GRAVEL_Y - 0.03;
+    const floor = (castleTopAt(m.x) ?? BOWL.GRAVEL_Y) - 0.03;   // flakes can land on the castle
     if (m.y < floor) m.y = Math.min(floor, m.y + m.vy * dt);
     m.x += Math.sin(perf / 600 + m.born) * 0.01 * dt;
   }
@@ -1017,6 +1225,48 @@ function drawMeals(perf) {
       ctx.restore();
     }
   }
+}
+
+// "About to pop": 2 = two feeds from popping, 1 = the next feed pops it,
+// 0 = nothing to warn about. Uses what the fish LOOKS like, so the warning
+// shows once it has eaten.
+function popWarning(sim, now) {
+  if (sim.state !== 'alive' || sim.pendingDeath) return 0;
+  const away = R.feedsUntilPop(shownFullness(sim, now));
+  return away <= 2 ? away : 0;
+}
+
+// The warning bubble above a fish: yellow "!" (getting full) or a pulsing
+// red 🤢 / 😵 (one more bite pops it).
+function drawPopBubble(sim, now, perf) {
+  const away = popWarning(sim, now);
+  if (!away || isPlopping(sim, perf)) return;
+  const [px, py] = toPx(sim.x, sim.y);
+  const L = fishLenPx(sim);
+  const r = Math.max(10, G.R * 0.045) * (away === 1 ? 1 + 0.12 * Math.sin(perf / 140) : 1);
+  const bx = px, by = py - L * 0.55 - r - Math.sin(perf / 400 + sim.phase) * 3;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.moveTo(bx - r * 0.3, by + r * 0.85);
+  ctx.lineTo(bx, by + r * 1.45);
+  ctx.lineTo(bx + r * 0.3, by + r * 0.85);
+  ctx.fillStyle = away === 1 ? '#ef4444' : '#facc15';
+  ctx.shadowColor = 'rgba(0,0,0,0.3)';
+  ctx.shadowBlur = 4;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (away === 1) {
+    ctx.font = `${Math.round(r * 1.25)}px sans-serif`;
+    ctx.fillText(Math.floor(perf / 900) % 2 ? '😵' : '🤢', bx, by + r * 0.05);
+  } else {
+    ctx.font = `800 ${Math.round(r * 1.3)}px -apple-system, system-ui, sans-serif`;
+    ctx.fillStyle = '#3b2a00';
+    ctx.fillText('!', bx, by + r * 0.05);
+  }
+  ctx.restore();
 }
 
 function drawFish(sim, now, perf) {
@@ -1067,11 +1317,15 @@ function drawFish(sim, now, perf) {
   }
 
   ctx.scale(sim.face, roll);
+  const away = sim.state === 'alive' ? popWarning(sim, now) : 0;
+  if (away === 1) ctx.translate(Math.sin(perf / 22) * L * 0.012, 0);   // trembling
   Art.drawFish(ctx, {
     type: R.typeOf(sim.data), color: sim.data.color, seed: sim.seed,
     L, girth, lenScale, flick, fin: sim.fin, t, col, alpha,
     eye: sim.state === 'dying' && !popping ? 'x' : popping || sim.scared > 0 ? 'shock' : 'normal',
-    mouthOpen: puff > 1.03 || perf - sim.chompAt < 250
+    mouthOpen: puff > 1.03 || perf - sim.chompAt < 250,
+    cheeks: away > 0, sweat: away === 1,
+    hat: R.hasPartyHat(sim.data, now)
   });
   ctx.restore();
 }
@@ -1107,9 +1361,11 @@ function render(now, perf) {
   const order = [...sims.values()].sort((a, b) => (a.state !== 'alive') - (b.state !== 'alive') || (a.id === selectedId) - (b.id === selectedId));
   const inAir = (s) => s.y < BOWL.WATER_Y;
   for (const s of order) if (!inAir(s)) drawFish(s, now, perf);
+  drawCastle(t);              // in front of the fish, so they can hide behind it
   drawPlants(t, 1);
   drawBubbles();
   drawParticles();
+  for (const s of order) drawPopBubble(s, now, perf);
   drawRipples(false);
   ctx.restore();
 
@@ -1128,6 +1384,31 @@ function render(now, perf) {
   drawGlass();
 }
 
+let livingSims = 0;
+
+// Burps from stuffed fish, and 12-hour birthdays.
+function fishLife(now, perf) {
+  for (const s of sims.values()) {
+    if (s.state !== 'alive' || isPlopping(s, perf)) continue;
+    if (popWarning(s, now) && perf > s.burpAt) {
+      s.burpAt = perf + rand(1500, 4000);
+      const mouthX = s.x + Math.sign(s.face) * fishLenN(s) * 0.5;
+      for (let i = 0; i < 2; i++) {
+        particles.push({ kind: 'bubble', x: mouthX, y: s.y - 0.01 * i, vx: Math.sign(s.face) * 0.05, vy: -0.12, r: rand(0.008, 0.014), rot: 0, vr: 0, age: 0, life: 1.2, buoyant: true });
+      }
+    }
+    if (!s.hatSeen && R.hasPartyHat(s.data, now)) {
+      s.hatSeen = true;
+      toast(`🎉 ${s.data.name} is ${R.PARTY_HAT_HOURS} hours old!`);
+      const colors = ['#ff4f9a', '#ffd23f', '#3b82f6', '#22c55e', '#a24ee8', '#ff7a1a'];
+      for (let i = 0; i < 30; i++) {
+        const a = rand(-Math.PI, 0), sp = rand(0.3, 0.9);
+        particles.push({ kind: 'scale', color: pick(colors), x: s.x, y: s.y - 0.05, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(0.008, 0.013), rot: rand(0, 6), vr: rand(-10, 10), age: 0, life: rand(1.2, 2.2), buoyant: false });
+      }
+    }
+  }
+}
+
 let lastPerf = performance.now();
 let lastSecond = 0;
 function tick() {
@@ -1137,7 +1418,10 @@ function tick() {
   const now = Date.now();
 
   checkStarvation(now);
+  livingSims = 0;
+  for (const s of sims.values()) if (s.state === 'alive') livingSims++;
   for (const s of sims.values()) updateSim(s, dt, now, perf);
+  fishLife(now, perf);
   for (const [id, s] of sims) if (s.state === 'gone') sims.delete(id);
   updateMeals(dt, perf);
   updateBubbles(dt);
@@ -1226,7 +1510,11 @@ function applyRoom(next) {
     const targets = e.fishId == null
       ? [...sims.values()].filter((s) => s.state === 'alive' && fishMap[s.id])
       : [sims.get(e.fishId)].filter((s) => s && s.state === 'alive');
-    for (const s of targets) s.puffAt = performance.now();
+    for (const s of targets) {
+      // Keep showing the old size until this fish reaches its food.
+      if (s.held == null) s.held = clamp(R.currentFullness(s.data, now), 0, 100);
+      s.pending += 1;
+    }
     if (targets.length) drops.push([targets, e.fishId == null]);
     if (e.by !== nickname) toast(DEBUG ? `⏱ ${R.describeFeed(e)}: here ${now - e.at} ms after the tap` : R.describeFeed(e));
   }
@@ -1249,7 +1537,9 @@ function applyRoom(next) {
     sim.art = Art.artOf(R.typeOf(data));
     if (sim.state === 'alive' && data.diedAt != null) {
       const cause = data.cause || 'starved';
-      startDeath(sim, cause, now - data.diedAt < 60000);
+      // An overfed fish eats first, then pops.
+      if (cause === 'overfed' && sim.pending > 0) sim.pendingDeath = cause;
+      else startDeath(sim, cause, now - data.diedAt < 60000);
     }
   }
   for (const sim of sims.values()) {
@@ -1402,6 +1692,12 @@ function refreshControls() {
   $('addBtn').disabled = !canWrite() || full;
   $('fullMsg').hidden = !full;
   $('feedBtn').disabled = !canWrite() || living === 0;
+  // Just a warning: feeding is still allowed.
+  const stuffed = [...sims.values()].filter((s) => popWarning(s, now) === 1).map((s) => s.data.name);
+  $('feedWarn').hidden = !stuffed.length;
+  $('feedHint').hidden = !stuffed.length || living >= R.MAX_FISH;
+  $('feedHint').textContent = !stuffed.length ? '' : stuffed.length === 1 ? `Careful: ${stuffed[0]} is stuffed`
+    : stuffed.length === 2 ? `Careful: ${stuffed[0]} and ${stuffed[1]} are stuffed` : `Careful: ${stuffed[0]} and ${stuffed.length - 1} more are stuffed`;
   $('fcFeed').disabled = !canWrite();
 }
 
@@ -1482,7 +1778,7 @@ function select(sim) {
   lastTouch = performance.now();
   sim.pauseUntil = lastTouch + 1200;
   $('fcSwatch').style.background = `linear-gradient(180deg, ${paletteOf(sim.data.color).top}, ${paletteOf(sim.data.color).mid} 50%, ${paletteOf(sim.data.color).belly})`;
-  $('fcName').textContent = `${sim.data.name} · ${R.typeLabel(sim.data)}`;
+  $('fcName').textContent = `${sim.data.name} · ${R.typeLabel(sim.data)} · ${R.ageLabel(sim.data, Date.now())}`;
   $('fishCard').hidden = false;
   cardValuesAt = 0;
   updateCard(Date.now(), lastTouch);
@@ -1508,11 +1804,18 @@ function updateCard(now, perf) {
   card.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
   if (perf - cardValuesAt > 250) {
     cardValuesAt = perf;
-    const full = clamp(R.currentFullness(sim.data, now), 0, 100);
+    const full = Math.round(shownFullness(sim, now));
+    const away = popWarning(sim, now);
+    const name = sim.data.name;
+    $('fcName').textContent = `${name} · ${R.typeLabel(sim.data)} · ${R.ageLabel(sim.data, now)}`;
     $('fcBar').style.width = `${full}%`;
-    $('fcBar').style.background = full < 20 ? 'var(--danger)' : full >= 90 ? 'var(--warn)' : 'var(--accent-2)';
+    $('fcBar').style.background = full < 20 ? 'var(--danger)' : away === 1 ? 'var(--danger)' : full >= 90 ? 'var(--warn)' : 'var(--accent-2)';
     $('fcPct').textContent = `${full} / 100 full`;
-    $('fcMood').textContent = full >= 90 ? 'Stuffed! Careful' : full < 20 ? 'Hungry!' : full < 40 ? 'Peckish' : 'Happy';
+    $('fcMood').textContent = away ? '' : full < 20 ? 'Hungry!' : full < 40 ? 'Peckish' : full >= 90 ? 'Very full' : 'Happy';
+    const warn = $('fcWarn');
+    warn.hidden = !away;
+    warn.textContent = away === 1 ? `${name} will pop if you feed it! 😬` : `${name} is stuffed — only 1 more bite is safe`;
+    warn.classList.toggle('danger', away === 1);
   }
 }
 
@@ -1598,12 +1901,14 @@ function toast(msg) {
 // ---------------------------------------------------------------------------
 function startDemo() {
   const now = Date.now();
-  const ids = ['demoa1', 'demob2', 'democ3', 'demod4', 'demoe5'];
-  const spec = [['Pickle', 'betta', 'royal', 94], ['Captain', 'goldfish', 'orange', 70], ['Mochi', 'angelfish', 'silver', 50], ['Biscuit', 'puffer', 'puffer', 32], ['Noodle', 'guppy', 'sunset', 12]];
+  const ids = ['demoa1', 'demob2', 'democ3', 'demod4', 'demoe5', 'demof6', 'demog7'];
+  // name, type, color, fullness, age in hours (Captain turns 12 a few seconds in)
+  const spec = [['Pickle', 'betta', 'royal', 94, 3], ['Captain', 'goldfish', 'orange', 70, 12 - 8 / 3600], ['Mochi', 'angelfish', 'silver', 97, 30],
+    ['Biscuit', 'puffer', 'puffer', 32, 20], ['Noodle', 'guppy', 'sunset', 12, 0.5], ['Waffle', 'comet', 'sarasa', 60, 6], ['Gilly', 'pleco', 'pleco', 55, 2]];
   const fish = {};
   ids.forEach((id, i) => {
-    const [name, type, color, full] = spec[i];
-    fish[id] = { name, type, color, addedAt: now - (i + 1) * 3600e3, addedBy: ['Sam', 'Priya', 'Alex'][i % 3], fullness: full, fullnessAt: now, diedAt: null, cause: null };
+    const [name, type, color, full, hours] = spec[i];
+    fish[id] = { name, type, color, addedAt: now - hours * 3600e3, addedBy: ['Sam', 'Priya', 'Alex'][i % 3], fullness: full, fullnessAt: now, diedAt: null, cause: null };
   });
   const demoRoom = {
     lastFedAt: now - 3 * 60e3, lastFedBy: 'Alex',
