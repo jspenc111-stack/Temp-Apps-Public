@@ -24,7 +24,15 @@ Shared data lives in **Firebase Firestore** (Google's free online database). The
 
 **Level 4 — live updates**
 
-- Every phone in the room listens to the bowl in real time (`onSnapshot`). When anyone adds or feeds fish, every open phone updates within about a second.
+- Every phone in the room listens to the bowl in real time (`onSnapshot`). When anyone adds, feeds, or loses a fish, every open phone should show it within **about 1 second**.
+- **Speed requirements (a noticeable lag was seen between two phones):**
+  - Keep **one** live listener per bowl, attached as soon as the bowl opens. Never re-fetch the bowl on a timer.
+  - When the app comes back to the foreground (`visibilitychange`), check the listener is still attached and re-attach if needed.
+  - Sign in anonymously and attach the listener in parallel where possible, not one after the other with extra waits.
+  - Update the screen from the listener immediately. Don't wait for animations to finish before applying new data; animate *toward* the new state.
+  - The phone that makes a change shows it instantly (Firestore's local update), and other phones animate it as soon as their listener fires.
+  - Deaths from overfeeding are written in the same transaction as the feed, so other phones see them right away. Starvation deaths are calculated on every phone from the formula, so they appear everywhere at the same moment even before anyone writes them.
+  - Measure the delay while testing on two devices, and mention the result in the PR.
 
 ## Screens and flow
 
@@ -245,5 +253,7 @@ These are details worked out while building, which the original spec left open:
 - The per-fish checks in the rules are deliberately small for the same 1000-check reason.
 - **Adding a fish clears out dead fish first**, so the bowl document never holds more than 10 fish in total (the rules count dead fish too).
 - A starved fish's `diedAt` is recorded as the moment it actually reached 0 (worked out from the formula), not the moment a phone noticed.
-- Overfed fish finish eating their flakes before popping, so you can see which feed did it.
+- **Changes show without waiting.** A fed fish changes size (and an overfed fish pops) the moment the update arrives; the falling flakes are just for show. The phone that taps shows its own change instantly by applying the same game rules locally, then saves it in a transaction using the same tap time (and, for a new fish, the same fish id and name), so the saved result matches. If saving fails, the change is undone and a message explains why.
+- After more than 30 seconds in the background, the app starts a fresh live listener when it comes back, because phones often freeze a backgrounded app's connection.
+- **Measuring the delay:** open the app with `?debug` at the end of the link on two phones. When a friend feeds or adds a fish, the message shows how many milliseconds it took to arrive (this depends on the two phones' clocks agreeing).
 - Tapping empty water also sends a ripple that makes nearby fish dart away (a small extra from v1).

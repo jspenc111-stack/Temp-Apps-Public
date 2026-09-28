@@ -13,6 +13,16 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="styles.css">
+  <!-- Start downloading the app and Firebase code straight away, all at once,
+       instead of one file after another. Keep the Firebase version the same
+       as in bowl.js (a test checks this). -->
+  <link rel="modulepreload" href="app.js">
+  <link rel="modulepreload" href="fish-rules.js">
+  <link rel="modulepreload" href="bowl.js">
+  <link rel="modulepreload" href="firebase-config.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js" crossorigin>
 </head>
 <body>
   <canvas id="scene" aria-label="The fishbowl. Tap a fish to select it."></canvas>

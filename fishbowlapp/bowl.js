@@ -4,7 +4,7 @@
 // saves the result as one step.
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {
   getFirestore, doc, onSnapshot, runTransaction, getDoc, serverTimestamp, Timestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
@@ -17,20 +17,20 @@ const db = getFirestore(app);
 
 const roomRef = (code) => doc(db, 'rooms', code);
 
-let signedIn = null;
+let signingIn = null;
 // Anonymous sign-in: invisible to the user, but lets the database rules
-// reject traffic that isn't from the app.
+// reject traffic that isn't from the app. A phone that signed in before is
+// remembered, so it can start listening without another trip to the server.
 export function ensureSignedIn() {
-  if (!signedIn) {
-    signedIn = new Promise((resolve, reject) => {
-      const stop = onAuthStateChanged(auth, (user) => {
-        if (user) { stop(); resolve(user); }
-      }, reject);
-      signInAnonymously(auth).catch((e) => { stop(); signedIn = null; reject(e); });
-    });
+  if (!signingIn) {
+    signingIn = auth.authStateReady()
+      .then(() => auth.currentUser || signInAnonymously(auth).then((cred) => cred.user))
+      .catch((e) => { signingIn = null; throw e; });
   }
-  return signedIn;
+  return signingIn;
 }
+// Start signing in as soon as this file loads, alongside everything else.
+ensureSignedIn().catch(() => {});
 
 function randomBytes(n) {
   return crypto.getRandomValues(new Uint8Array(n));
@@ -99,14 +99,16 @@ export function watchRoom(code, onData, onError) {
 
 // Read the latest bowl, apply `change`, save — as one transaction, so two
 // friends tapping at the same moment can't overwrite each other.
-async function change(code, fn) {
+// `at` is the moment of the tap. The phone already showed the change using
+// the same time, so the saved result matches what's on screen.
+async function change(code, at, fn) {
   await ensureSignedIn();
   for (let attempt = 1; ; attempt++) {
     try {
       return await runTransaction(db, async (tx) => {
         const snap = await tx.get(roomRef(code));
         if (!snap.exists()) throw new R.RuleError('missing', 'This bowl no longer exists');
-        const result = fn(fromFirestore(snap.data()), Date.now());
+        const result = fn(fromFirestore(snap.data()), at);
         if (result.write !== false) tx.set(roomRef(code), toFirestore(result.room));
         return result;
       });
@@ -120,19 +122,20 @@ async function change(code, fn) {
   }
 }
 
-export function addFish(code, nickname) {
-  return change(code, (room, now) =>
-    R.addFish(room, { id: R.makeFishId(randomBytes(10)), by: nickname, now })
+// `id` is picked on the phone, so the phone and the database make the same fish.
+export function addFish(code, nickname, id, at) {
+  return change(code, at, (room, now) =>
+    R.addFish(room, { id, by: nickname, now, rand: R.seededRandom(id) })
   );
 }
 
-export function feed(code, nickname, fishId = null) {
-  return change(code, (room, now) => R.feed(room, { fishId, by: nickname, now }));
+export function feed(code, nickname, fishId, at) {
+  return change(code, at, (room, now) => R.feed(room, { fishId, by: nickname, now }));
 }
 
 // Record starvations and remove long-dead fish. Only writes if needed.
 export function housekeeping(code) {
-  return change(code, (room, now) => {
+  return change(code, Date.now(), (room, now) => {
     const res = R.recordDeaths(room, now);
     return { ...res, write: res.changed };
   });

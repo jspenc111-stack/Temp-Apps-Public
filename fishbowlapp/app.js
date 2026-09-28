@@ -751,7 +751,7 @@ function makeSim(id, data, now, spawned) {
     tail: rand(0, 10), fin: rand(0, 10), phase: rand(0, 10),
     size: sizeFor(id),
     girth: girthFor(R.currentFullness(data, now)),
-    held: null, pending: 0, pendingDeath: null,
+    chompAt: -1e9,
     puffAt: -1e9, pauseUntil: 0, scared: 0,
     state: 'alive', deathAt: 0, deathY: 0, cause: null,
     bornAt: spawned ? performance.now() : -1e9
@@ -760,7 +760,8 @@ function makeSim(id, data, now, spawned) {
   return sim;
 }
 
-const shownFullness = (sim, now) => clamp(sim.held ?? R.currentFullness(sim.data, now), 0, 100);
+// Fish always show the latest fullness straight away (and animate toward it).
+const shownFullness = (sim, now) => clamp(R.currentFullness(sim.data, now), 0, 100);
 
 function startDeath(sim, cause, announce) {
   if (sim.state !== 'alive') return;
@@ -768,7 +769,6 @@ function startDeath(sim, cause, announce) {
   sim.cause = cause;
   sim.deathAt = performance.now();
   sim.deathY = sim.y;
-  sim.held = null;
   meals = meals.filter((m) => m.fishId !== sim.id);
   if (selectedId === sim.id) deselect();
   if (announce) toast(R.deathMessage(sim.data.name, cause));
@@ -793,12 +793,11 @@ function dropFlakes(targets, spread) {
   });
 }
 
+// The flakes are just for show: the fish's size already changed when the
+// feed arrived, so eating them only opens its mouth.
 function eatMeal(sim, meal) {
   meals = meals.filter((m) => m !== meal);
-  sim.pending = Math.max(0, sim.pending - 1);
-  sim.held = sim.pending > 0 && sim.held != null ? sim.held + R.FEED_AMOUNT : null;
-  sim.puffAt = performance.now();
-  if (sim.pending === 0 && sim.pendingDeath) startDeath(sim, sim.pendingDeath, true);
+  sim.chompAt = performance.now();
 }
 
 // Overfed fish swell up for a moment, then pop (starved fish float belly-up).
@@ -1127,7 +1126,8 @@ function drawFish(sim, now, perf) {
 
   // Mouth
   ctx.beginPath();
-  ctx.arc(L * 0.48, L * 0.03, L * 0.025 * (puff > 1.02 ? 1.8 : 1), -0.4, 0.9);
+  const chomping = puff > 1.02 || perf - sim.chompAt < 250;
+  ctx.arc(L * 0.48, L * 0.03, L * 0.025 * (chomping ? 1.8 : 1), -0.4, 0.9);
   ctx.strokeStyle = 'rgba(0,0,0,0.35)';
   ctx.lineWidth = Math.max(0.8, L * 0.012);
   ctx.stroke();
@@ -1173,6 +1173,7 @@ function tick() {
   lastPerf = perf;
   const now = Date.now();
 
+  checkStarvation(now);
   for (const s of sims.values()) updateSim(s, dt, now, perf);
   for (const [id, s] of sims) if (s.state === 'gone') sims.delete(id);
   updateMeals(dt, perf);
@@ -1202,11 +1203,16 @@ const DEMO = params.has('demo');
 
 let nickname = R.cleanNickname(stored(KEYS.nick));
 let roomCode = null;
-let room = null;
+let room = null;         // what's on screen: the database's copy + my unconfirmed changes
+let serverRoom = null;   // the bowl as the database last sent it
+let pendingOps = [];     // my changes the database hasn't confirmed yet
 let api = null;          // bowl.js (or the demo stand-in) once loaded
 let apiLoading = null;
 let apiFailed = false;
 let stopWatching = null;
+let retryDelay = 1000;
+let hiddenAt = 0;
+const DEBUG = params.has('debug');
 let online = navigator.onLine;
 let selectedId = null;
 let lastTouch = 0;       // for the 5-second card timeout
@@ -1242,7 +1248,8 @@ function applyRoom(next) {
   room = next;
   const fishMap = next.fish || {};
 
-  // 1. New feed-log entries → flakes (and "held" fullness until eaten).
+  // 1. New feed-log entries → a gulp and flakes. The fish's new size shows
+  //    straight away; the flakes are just for show.
   const fresh = [];
   for (const e of next.feedLog || []) {
     const k = logKey(e);
@@ -1256,12 +1263,9 @@ function applyRoom(next) {
     const targets = e.fishId == null
       ? [...sims.values()].filter((s) => s.state === 'alive' && fishMap[s.id])
       : [sims.get(e.fishId)].filter((s) => s && s.state === 'alive');
-    for (const s of targets) {
-      if (s.held == null) s.held = clamp(R.currentFullness(s.data, now), 0, 100);
-      s.pending += 1;
-    }
+    for (const s of targets) s.puffAt = performance.now();
     if (targets.length) drops.push([targets, e.fishId == null]);
-    if (e.by !== nickname) toast(R.describeFeed(e));
+    if (e.by !== nickname) toast(DEBUG ? `⏱ ${R.describeFeed(e)}: here ${now - e.at} ms after the tap` : R.describeFeed(e));
   }
 
   // 2. Fish that arrived, changed, or died.
@@ -1272,7 +1276,7 @@ function applyRoom(next) {
       sim = makeSim(id, data, now, true);
       sims.set(id, sim);
       if (now - data.addedAt < 60000) {
-        toast(`${data.name} joined the bowl!`);
+        toast(DEBUG && data.addedBy !== nickname ? `⏱ ${data.name}: here ${now - data.addedAt} ms after the tap` : `${data.name} joined the bowl!`);
         for (let i = 0; i < 8; i++) {
           particles.push({ kind: 'bubble', x: sim.x + rand(-0.05, 0.05), y: sim.y + rand(0, 0.06), vx: rand(-0.1, 0.1), vy: rand(-0.2, 0), r: rand(0.006, 0.013), rot: 0, vr: 0, age: 0, life: rand(0.6, 1.2), buoyant: true });
         }
@@ -1284,9 +1288,7 @@ function applyRoom(next) {
     sim.data = data;
     if (sim.state === 'alive' && data.diedAt != null) {
       const cause = data.cause || 'starved';
-      const recent = now - data.diedAt < 60000;
-      if (sim.pending > 0 && cause === 'overfed') sim.pendingDeath = cause;
-      else startDeath(sim, cause, recent);
+      startDeath(sim, cause, now - data.diedAt < 60000);
     }
   }
   for (const sim of sims.values()) {
@@ -1301,12 +1303,48 @@ function applyRoom(next) {
   if (!$('sheet').hidden && sheetKind === 'history') showHistory();
 }
 
-function everySecond(now) {
-  if (!room) return;
-  // Starvation happens by the formula, even with nobody feeding.
+// Starvation happens by the formula, even with nobody feeding. Every phone
+// does the same sum, so the fish dies everywhere at the same moment.
+function checkStarvation(now) {
   for (const s of sims.values()) {
     if (s.state === 'alive' && s.data.diedAt == null && R.currentFullness(s.data, now) <= 0) startDeath(s, 'starved', true);
   }
+}
+
+// What to show = the database's copy with my unconfirmed changes on top.
+function showRoom() {
+  let r = serverRoom;
+  for (const op of pendingOps) {
+    try { r = op.apply(r); } catch { /* no longer applies (e.g. that fish died) */ }
+  }
+  if (r) applyRoom(r);
+}
+
+function onServerRoom(data) {
+  serverRoom = data;
+  const now = Date.now();
+  pendingOps = pendingOps.filter((op) => !op.confirmedBy(data) && !(op.sent && now - op.at > 15000));
+  showRoom();
+}
+
+// Show my change right away, then save it. If saving fails, undo it.
+async function runOp(op, send) {
+  if (!room) return;
+  try { op.apply(room); } catch (e) { toast(explain(e)); return; }
+  pendingOps.push(op);
+  showRoom();
+  try {
+    await send();
+    op.sent = true;
+  } catch (e) {
+    pendingOps = pendingOps.filter((o) => o !== op);
+    toast(explain(e));
+    showRoom();
+  }
+}
+
+function everySecond(now) {
+  if (!room) return;
   if (R.needsHousekeeping(room, now) && canWrite() && now - housekeepingAt > 15000) {
     housekeepingAt = now;
     api.housekeeping(roomCode).catch(() => {});
@@ -1327,6 +1365,8 @@ function showWelcome(message = '') {
   if (stopWatching) { stopWatching(); stopWatching = null; }
   roomCode = null;
   room = null;
+  serverRoom = null;
+  pendingOps = [];
   sims.clear();
   meals = [];
   deselect();
@@ -1356,11 +1396,13 @@ function openBowl(code) {
   meals = [];
   seenLog.clear();
   room = null;
+  serverRoom = null;
+  pendingOps = [];
 
   // Show the last known bowl straight away (works offline too).
   try {
     const cached = JSON.parse(stored(KEYS.cache) || 'null');
-    if (cached && cached.code === code) applyRoom(cached.room);
+    if (cached && cached.code === code) onServerRoom(cached.room);
   } catch { /* ignore a broken cache */ }
   refreshControls();
   connect();
@@ -1377,12 +1419,14 @@ function connect() {
         showWelcome('No bowl with that code');
         return;
       }
+      retryDelay = 1000;
       store(KEYS.cache, JSON.stringify({ code, room: data }));
-      applyRoom(data);
+      onServerRoom(data);
     }, () => {
       if (stopWatching) { stopWatching(); stopWatching = null; }
       refreshControls();
-      setTimeout(connect, 5000);
+      setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 15000);
     });
   }, () => { /* offline: the 'online' event retries */ });
 }
@@ -1428,12 +1472,26 @@ function explain(e) {
 
 async function addFish() {
   if (!canWrite()) return;
-  try { await api.addFish(roomCode, nickname); } catch (e) { toast(explain(e)); }
+  const id = R.makeFishId(crypto.getRandomValues(new Uint8Array(10)));
+  const at = Date.now();
+  const by = nickname;
+  await runOp({
+    at,
+    apply: (r) => R.addFish(r, { id, by, now: at, rand: R.seededRandom(id) }).room,
+    confirmedBy: (d) => !!(d.fish && d.fish[id])
+  }, () => api.addFish(roomCode, by, id, at));
 }
 
 async function feed(fishId = null) {
   if (!canWrite()) return;
-  try { await api.feed(roomCode, nickname, fishId); } catch (e) { toast(explain(e)); }
+  const at = Date.now();
+  const by = nickname;
+  const key = logKey({ at, by, fishId });
+  await runOp({
+    at,
+    apply: (r) => R.feed(r, { fishId, by, now: at }).room,
+    confirmedBy: (d) => (d.feedLog || []).some((e) => logKey(e) === key)
+  }, () => api.feed(roomCode, by, fishId, at));
 }
 
 async function share() {
@@ -1595,18 +1653,19 @@ function startDemo() {
     ],
     fish
   };
+  // Pretend database: same rules, a short delay, then the same update path.
   const later = (fn) => new Promise((resolve, reject) => setTimeout(() => {
-    try { const res = fn(); applyRoom(res.room); resolve(res); } catch (e) { reject(e); }
+    try { const res = fn(); if (res.changed !== false) onServerRoom(res.room); resolve(res); } catch (e) { reject(e); }
   }, 150));
   api = {
-    addFish: () => later(() => R.addFish(room, { id: R.makeFishId(crypto.getRandomValues(new Uint8Array(10))), by: nickname, now: Date.now() })),
-    feed: (_code, _nick, fishId) => later(() => R.feed(room, { fishId, by: nickname, now: Date.now() })),
-    housekeeping: () => later(() => R.recordDeaths(room, Date.now()))
+    addFish: (_code, by, id, at) => later(() => R.addFish(serverRoom, { id, by, now: at, rand: R.seededRandom(id) })),
+    feed: (_code, by, fishId, at) => later(() => R.feed(serverRoom, { fishId, by, now: at })),
+    housekeeping: () => later(() => R.recordDeaths(serverRoom, Date.now()))
   };
   roomCode = 'DEMO';
   show('bowl');
   $('roomCode').textContent = 'DEMO';
-  applyRoom(demoRoom);
+  onServerRoom(demoRoom);
   toast('Demo bowl: nothing here is shared or saved.');
 }
 
@@ -1678,6 +1737,17 @@ canvas.addEventListener('pointerdown', (e) => {
 
 window.addEventListener('resize', resize);
 window.addEventListener('online', () => { online = true; refreshControls(); connect(); });
+
+// Back in the app: make sure the live listener is still attached. Phones
+// often freeze a backgrounded app's connection, so after a longer break
+// start a fresh one.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (DEMO || !roomCode) return;
+  if (stopWatching && Date.now() - hiddenAt > 30000) { stopWatching(); stopWatching = null; }
+  connect();
+  everySecond(Date.now());
+});
 window.addEventListener('offline', () => { online = false; refreshControls(); });
 
 // ---------------------------------------------------------------------------
@@ -1689,6 +1759,7 @@ requestAnimationFrame(tick);
 if (DEMO) {
   startDemo();
 } else {
+  loadApi().catch(() => {}); // start signing in now, in parallel with everything else
   const linked = R.normalizeRoomCode(params.get('room'));
   if (params.has('room')) history.replaceState(null, '', location.pathname);
   const saved = R.normalizeRoomCode(stored(KEYS.room));

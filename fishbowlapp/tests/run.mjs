@@ -217,6 +217,16 @@ test('a name frees up once its fish is gone', () => {
   eq(r.fish.y.name, first);
 });
 
+test('the same fish id always gives the same new fish (phone and database agree)', () => {
+  const { room } = bowlWith(4);
+  const make = () => R.addFish(room, { id: 'abc123', by: 'Sam', now: T0, rand: R.seededRandom('abc123') }).fish;
+  eq(JSON.stringify(make()), JSON.stringify(make()));
+  const other = R.addFish(room, { id: 'zzz999', by: 'Sam', now: T0, rand: R.seededRandom('zzz999') }).fish;
+  ok(other.name !== make().name || other.color !== make().color, 'different ids should usually differ');
+  const r = R.seededRandom('x');
+  for (let i = 0; i < 1000; i++) { const v = r(); ok(v >= 0 && v < 1, 'in range'); }
+});
+
 test('about 60 original fish names, all 20 characters or fewer', () => {
   ok(R.FISH_NAMES.length >= 55 && R.FISH_NAMES.length <= 65, `have ${R.FISH_NAMES.length}`);
   eq(new Set(R.FISH_NAMES).size, R.FISH_NAMES.length, 'no duplicates');
@@ -290,6 +300,14 @@ test('activity line and time ago', () => {
   eq(R.activityLine({ lastFedAt: { seconds: T0 / 1000, nanoseconds: 0 }, lastFedBy: 'Sam' }, T0 + 2 * HOUR), 'Last fed 2 hr ago by Sam');
   eq(R.deathMessage('Noodle', 'overfed'), 'Noodle ate too much 😢');
   eq(R.deathMessage('Biscuit', 'starved'), 'Biscuit starved 😢');
+});
+
+test('index.html preloads the same Firebase version that bowl.js uses', () => {
+  const version = (text) => [...new Set([...text.matchAll(/firebasejs\/([\d.]+)\//g)].map((m) => m[1]))];
+  const inBowl = version(readFileSync(join(APP_DIR, 'bowl.js'), 'utf8'));
+  const inHtml = version(readFileSync(join(APP_DIR, 'index.html'), 'utf8'));
+  eq(inBowl.length, 1, 'one Firebase version in bowl.js');
+  eq(inHtml.join(), inBowl.join(), 'index.html preload version');
 });
 
 // ---------------------------------------------------------------------------

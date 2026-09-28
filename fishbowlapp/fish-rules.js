@@ -124,6 +124,20 @@ export function pickName(room, rand) {
   }
 }
 
+// A repeatable "random" sequence from some text (a fish id). The phone that
+// adds a fish shows it straight away, and the database transaction later
+// makes the same fish; using the same sequence gives both the same name.
+export function seededRandom(text) {
+  let seed = 0;
+  for (const ch of String(text)) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0;
+  return function () {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export function pickColor(room, now, rand) {
   const used = new Set(livingFish(room, now).map((f) => f.color));
   const free = COLORS.filter((c) => !used.has(c));
