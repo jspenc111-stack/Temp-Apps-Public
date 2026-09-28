@@ -801,6 +801,27 @@ function eatMeal(sim, meal) {
   if (sim.pending === 0 && sim.pendingDeath) startDeath(sim, sim.pendingDeath, true);
 }
 
+// Overfed fish swell up for a moment, then pop (starved fish float belly-up).
+const POP_MS = 700;
+const isPopping = (sim) => sim.state === 'dying' && sim.cause === 'overfed';
+
+function burst(sim) {
+  const pal = paletteOf(sim.data.color);
+  for (let i = 0; i < 26; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(0.3, 1.1);
+    particles.push({
+      kind: i % 3 === 0 ? 'bubble' : 'scale',
+      color: pick([pal.mid, pal.fin, pal.belly, pal.top]),
+      x: sim.x, y: sim.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      r: rand(0.008, 0.02), rot: rand(0, 6), vr: rand(-8, 8),
+      age: 0, life: rand(0.9, 1.8), buoyant: i % 3 === 0
+    });
+  }
+  particles.push({ kind: 'text', text: 'POP!', x: sim.x, y: Math.max(sim.y - 0.05, BOWL.WATER_Y + 0.2), vx: 0, vy: -0.1, r: 0, rot: 0, vr: 0, age: 0, life: 1.3, buoyant: true });
+  ripples.push({ x: sim.x, y: sim.y, age: 0, life: 0.6, size: 0.05, color: 'rgba(255,240,200,0.9)' });
+  for (const o of sims.values()) if (o !== sim) startle(o, sim.x, sim.y, 0.6);
+}
+
 function startle(sim, x, y, radius) {
   if (sim.state !== 'alive') return;
   const dx = sim.x - x, dy = sim.y - y;
@@ -814,6 +835,14 @@ function startle(sim, x, y, radius) {
 }
 
 function updateSim(sim, dt, now, perf) {
+  if (isPopping(sim)) {
+    sim.x += Math.sin(perf / 30) * 0.02 * dt;
+    if (perf - sim.deathAt > POP_MS) {
+      burst(sim);
+      sim.state = 'gone';
+    }
+    return;
+  }
   if (sim.state === 'dying') {
     const t = perf - sim.deathAt;
     const k = clamp(t / 2000, 0, 1);
@@ -929,13 +958,19 @@ function drawMeals(perf) {
 function drawFish(sim, now, perf) {
   const pal = paletteOf(sim.data.color);
   const [px, py] = toPx(sim.x, sim.y);
-  const L = fishLenPx(sim);
+  let L = fishLenPx(sim);
   const full = shownFullness(sim, now);
   let alpha = clamp((perf - sim.bornAt) / 600, 0, 1);
-  let paleT = 0, roll = 1;
+  let paleT = 0, roll = 1, swell = 0, wobble = 0;
   let greyT = sim.state === 'alive' ? clamp((20 - full) / 20, 0, 1) * 0.75 : 0;
+  const popping = isPopping(sim);
 
-  if (sim.state === 'dying') {
+  if (popping) {
+    const k = clamp((perf - sim.deathAt) / POP_MS, 0, 1);
+    swell = k * k * 1.6;
+    L *= 1 + k * 0.25;
+    wobble = Math.sin(perf / 25) * 0.08 * k;
+  } else if (sim.state === 'dying') {
     const t = perf - sim.deathAt;
     paleT = clamp(t / 800, 0, 1);
     roll = Math.cos(clamp(t / 700, 0, 1) * Math.PI); // 1 → -1: rolls belly-up
@@ -945,16 +980,16 @@ function drawFish(sim, now, perf) {
   // Quick "gulp" puff: ~10% bigger, then settle.
   const pk = (perf - sim.puffAt) / 380;
   const puff = pk >= 0 && pk <= 1 ? 1 + 0.1 * Math.sin(Math.PI * pk) : 1;
-  const g = sim.girth * puff;
+  const g = sim.girth * puff + swell;
   const Ht = L * 0.27 * (1 + (g - 1) * 0.55);             // back
   const Hb = L * 0.27 * g * (g > 1 ? 1 + (g - 1) * 0.35 : 1); // belly bulges more
   const col = (c) => (paleT > 0 ? pale(c, paleT) : greyed(c, greyT));
-  const flick = sim.state === 'alive' ? Math.sin(sim.tail) * L * 0.07 : 0;
+  const flick = sim.state === 'alive' ? Math.sin(sim.tail) * L * 0.07 : popping ? Math.sin(perf / 30) * L * 0.1 : 0;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(px, py);
-  ctx.rotate(sim.tilt * Math.sign(sim.face));
+  ctx.rotate(sim.tilt * Math.sign(sim.face) + wobble);
 
   // Soft glow when selected
   if (sim.id === selectedId && sim.state === 'alive') {
@@ -1072,7 +1107,7 @@ function drawFish(sim, now, perf) {
   ctx.arc(ex, ey, er, 0, Math.PI * 2);
   ctx.fillStyle = '#fbfbf7';
   ctx.fill();
-  if (sim.state === 'dying') {
+  if (sim.state === 'dying' && !popping) {
     ctx.strokeStyle = '#222';
     ctx.lineWidth = Math.max(1, er * 0.35);
     ctx.beginPath();
@@ -1081,7 +1116,7 @@ function drawFish(sim, now, perf) {
     ctx.stroke();
   } else {
     ctx.beginPath();
-    ctx.arc(ex + er * 0.15, ey, er * (sim.scared > 0 ? 0.35 : 0.58), 0, Math.PI * 2);
+    ctx.arc(ex + er * 0.15, ey, er * (sim.scared > 0 || popping ? 0.35 : 0.58), 0, Math.PI * 2);
     ctx.fillStyle = '#111';
     ctx.fill();
     ctx.beginPath();

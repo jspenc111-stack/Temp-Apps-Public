@@ -69,7 +69,9 @@ Shared data lives in **Firebase Firestore** (Google's free online database). The
 - **Fullness drops 1 point every 864 seconds (14.4 minutes).** A full fish (100) starves in **24 hours**. A new fish has **12 hours**. Each feed buys about **72 minutes**.
 - Above **100** → the fish dies of **overfeeding**. At **0** → it dies of **starvation**.
 - Keep these as named constants at the top of `fish-rules.js` (`START_FULLNESS = 50`, `FEED_AMOUNT = 5`, `SECONDS_PER_POINT = 864`, `MAX_FISH = 10`) so they're easy to tune.
-- A dead fish turns pale, rolls belly-up, floats to the surface, and fades out after about 3 seconds. Then its spot frees up.
+- **Overfed fish pop** (as in v1): the fish balloons and wobbles for a moment, then bursts into scales and bubbles with a "POP!", and nearby fish dart away.
+- **Starved fish** turn pale, roll belly-up, float to the surface, and fade out after about 3 seconds.
+- Either way, the fish's spot then frees up.
 
 **Important — hunger must work without any phone open.** Don't store a fullness value that the app keeps decreasing. Instead, store for each fish:
 
@@ -243,5 +245,5 @@ These are details worked out while building, which the original spec left open:
 - The per-fish checks in the rules are deliberately small for the same 1000-check reason.
 - **Adding a fish clears out dead fish first**, so the bowl document never holds more than 10 fish in total (the rules count dead fish too).
 - A starved fish's `diedAt` is recorded as the moment it actually reached 0 (worked out from the formula), not the moment a phone noticed.
-- Overfed fish finish eating their flakes before rolling belly-up, so you can see which feed did it.
+- Overfed fish finish eating their flakes before popping, so you can see which feed did it.
 - Tapping empty water also sends a ripple that makes nearby fish dart away (a small extra from v1).
