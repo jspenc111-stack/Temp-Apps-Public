@@ -316,6 +316,118 @@ test('feed log entries name the fish, and "everyone" for Feed all', () => {
   eq(all.lastFedBy, 'Sam');
 });
 
+// Blame board -------------------------------------------------------------
+// Local-time dates, so these work in any time zone: 2026-09-28 is a Monday.
+const MON = new Date(2026, 8, 28, 0, 0, 0).getTime();
+const WED = new Date(2026, 8, 30, 15, 30).getTime();
+const NEXT_MON = new Date(2026, 9, 5, 0, 0, 0).getTime();
+const playerOf = (room, nick) => room.week.players.find((p) => p.nick === nick);
+
+test('weeks start on Monday at midnight (phone time)', () => {
+  eq(R.weekStart(WED), MON);
+  eq(R.weekStart(MON), MON);
+  eq(R.weekStart(NEXT_MON - 1), MON, 'Sunday 23:59:59');
+  eq(R.weekStart(NEXT_MON), NEXT_MON);
+});
+
+test('blame board counts feeds and fish added', () => {
+  let room = R.emptyRoom();
+  room = R.addFish(room, { id: 'a', by: 'Sam', now: WED }).room;
+  room = R.addFish(room, { id: 'b', by: 'Priya', now: WED }).room;
+  room = R.addFish(room, { id: 'c', by: 'Priya', now: WED }).room;
+  room = R.feed(room, { by: 'Sam', now: WED }).room;             // Feed all counts as one
+  room = R.feed(room, { fishId: 'a', by: 'Sam', now: WED }).room; // Feed this fish counts as one
+  room = R.feed(room, { fishId: 'b', by: 'Priya', now: WED }).room;
+  eq(JSON.stringify(playerOf(room, 'Sam')), JSON.stringify({ nick: 'Sam', feeds: 2, added: 1, overfed: 0 }));
+  eq(JSON.stringify(playerOf(room, 'Priya')), JSON.stringify({ nick: 'Priya', feeds: 1, added: 2, overfed: 0 }));
+  eq(room.week.start, MON);
+});
+
+test('overfeed blame goes to whoever gave the fatal feed', () => {
+  let room = R.addFish(R.emptyRoom(), { id: 'a', by: 'Sam', now: WED }).room;
+  for (let i = 0; i < 10; i++) room = R.feed(room, { fishId: 'a', by: 'Sam', now: WED }).room;  // up to 100
+  const res = R.feed(room, { fishId: 'a', by: 'Priya', now: WED });                            // the fatal bite
+  eq(res.room.fish.a.blame, 'Priya');
+  eq(playerOf(res.room, 'Priya').overfed, 1);
+  eq(playerOf(res.room, 'Sam').overfed, 0);
+  eq(R.deathMessage('Pickle', 'overfed', 'Priya'), 'Pickle ate too much 😢 — last fed by Priya');
+  eq(R.deathMessage('Pickle', 'starved', null), 'Pickle starved 😢');
+});
+
+test('the Monday reset moves the winners into last week', () => {
+  let room = R.addFish(R.emptyRoom(), { id: 'a', by: 'Sam', now: WED }).room;
+  room = R.feed(room, { by: 'Sam', now: WED }).room;
+  room = R.feed(room, { by: 'Sam', now: WED }).room;
+  room = R.feed(room, { by: 'Priya', now: WED }).room;
+  // Before anyone saves next week, the board already shows an empty new week.
+  const board = R.blameBoard(room, NEXT_MON + 1000);
+  eq(board.headChef, null, 'new week starts empty');
+  eq(board.lastWeek.headChef, 'Sam');
+  // The first save of the new week stores it.
+  room = R.feed(room, { by: 'Priya', now: NEXT_MON + 1000 }).room;
+  eq(room.week.start, NEXT_MON);
+  eq(room.week.players.length, 1);
+  eq(playerOf(room, 'Priya').feeds, 1);
+  eq(room.lastWeek.headChef, 'Sam');
+  eq(room.lastWeek.grimFeeder, null, 'nobody overfed last week');
+});
+
+test('ties are shared, and players with nothing don\'t appear', () => {
+  let room = R.emptyRoom();
+  room = R.addFish(room, { id: 'a', by: 'Sam', now: WED }).room;
+  room = R.addFish(room, { id: 'b', by: 'Priya', now: WED }).room;
+  room = R.feed(room, { by: 'Sam', now: WED }).room;
+  room = R.feed(room, { by: 'Priya', now: WED }).room;
+  const board = R.blameBoard(room, WED);
+  eq(R.joinNames(board.headChef.names), 'Sam & Priya');
+  eq(board.headChef.count, 1);
+  eq(board.grimFeeder, null);
+  eq(R.joinNames(['A', 'B', 'C']), 'A, B & C');
+  room.week.players.push({ nick: 'Lurker', feeds: 0, added: 0, overfed: 0 });
+  ok(!R.blameBoard(room, WED).table.some((p) => p.nick === 'Lurker'), 'zero-everything player hidden');
+});
+
+test('oldest fish award and the all-time oldest-fish record', () => {
+  let room = R.addFish(R.emptyRoom(), { id: 'old', by: 'Sam', now: WED - 30 * HOUR, rand: () => 0 }).room;
+  room.fish.old.fullness = 100; room.fish.old.fullnessAt = WED;   // keep it alive
+  room = R.addFish(room, { id: 'new', by: 'Sam', now: WED, rand: () => 0.5 }).room;
+  const board = R.blameBoard(room, WED + HOUR);
+  eq(board.oldestFish.name, room.fish.old.name);
+  eq(board.oldestFish.hours, 31);
+  // It dies of overfeeding at 31 hours: that's the record.
+  for (let i = 0; i < 1; i++) room = R.feed(room, { fishId: 'old', by: 'Sam', now: WED + HOUR }).room;
+  eq(room.record.ageHours, 31);
+  eq(room.record.cause, 'overfed');
+  eq(room.record.name, room.fish.old.name);
+  // A younger fish dying later doesn't replace it.
+  const later = R.recordDeaths(room, WED + 20 * HOUR).room;  // 'new' starves at 12 h old
+  eq(later.record.ageHours, 31);
+  // An older one does.
+  const r2 = { ...room, record: { name: 'Tiny', type: 'guppy', ageHours: 2, cause: 'starved' } };
+  eq(R.recordDeaths(r2, WED + 20 * HOUR).room.record.cause, 'starved');
+});
+
+test('hearts: newest first, only the last 10 kept', () => {
+  let room = R.addFish(R.emptyRoom(), { id: 'a', by: 'Sam', now: T0 }).room;
+  for (let i = 0; i < 13; i++) room = R.sendHeart(room, { by: `P${i}`, now: T0 + i }).room;
+  eq(room.hearts.length, 10);
+  eq(room.hearts[0].by, 'P12');
+  const one = R.sendHeart(room, { fishId: 'a', by: 'Sam', now: T0 + 99 });
+  eq(one.heart.fishName, room.fish.a.name);
+  eq(R.describeHeart(one.heart), `Sam sent love to ${room.fish.a.name} ❤️`);
+  eq(R.describeHeart({ by: 'Sam', fishName: null }), 'Sam sent love ❤️');
+  throwsCode(() => R.sendHeart(room, { fishId: 'nope', by: 'Sam', now: T0 }), 'gone');
+});
+
+test('the week keeps at most 30 players', () => {
+  let room = R.addFish(R.emptyRoom(), { id: 'a', by: 'Sam', now: WED }).room;
+  for (let i = 0; i < 40; i++) {
+    room.fish.a.fullness = 50; // keep the fish alive
+    room = R.feed(room, { by: `Player${i}`, now: WED }).room;
+  }
+  ok(room.week.players.length <= R.PLAYERS_MAX, `${room.week.players.length} players`);
+});
+
 test('changes never modify the room passed in', () => {
   const { room, ids } = bowlWith(1);
   const before = JSON.stringify(room);

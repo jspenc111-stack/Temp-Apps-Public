@@ -43,7 +43,11 @@ function fromFirestore(data) {
     lastFedAt: data.lastFedAt ?? null,
     lastFedBy: data.lastFedBy ?? null,
     feedLog: Array.isArray(data.feedLog) ? data.feedLog : [],
-    fish: data.fish && typeof data.fish === 'object' ? data.fish : {}
+    fish: data.fish && typeof data.fish === 'object' ? data.fish : {},
+    hearts: Array.isArray(data.hearts) ? data.hearts : [],
+    week: data.week ?? null,
+    lastWeek: data.lastWeek ?? null,
+    record: data.record ?? null
   };
 }
 
@@ -55,7 +59,12 @@ function toFirestore(room) {
     lastFedAt: typeof room.lastFedAt === 'number' ? Timestamp.fromMillis(room.lastFedAt) : (room.lastFedAt ?? null),
     lastFedBy: room.lastFedBy ?? null,
     feedLog: room.feedLog,
-    fish: room.fish
+    fish: room.fish,
+    hearts: room.hearts ?? [],
+    // The blame board fields only appear once there's something in them.
+    ...(room.week ? { week: room.week } : {}),
+    ...(room.lastWeek ? { lastWeek: room.lastWeek } : {}),
+    ...(room.record ? { record: room.record } : {})
   };
 }
 
@@ -131,6 +140,11 @@ export function addFish(code, nickname, id, at) {
 
 export function feed(code, nickname, fishId, at) {
   return change(code, at, (room, now) => R.feed(room, { fishId, by: nickname, now }));
+}
+
+// ❤️ Send love to everyone (fishId = null) or to one fish.
+export function sendHeart(code, nickname, fishId, at) {
+  return change(code, at, (room, now) => R.sendHeart(room, { fishId, by: nickname, now }));
 }
 
 // Record starvations and remove long-dead fish. Only writes if needed.

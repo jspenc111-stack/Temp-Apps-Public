@@ -456,7 +456,7 @@ function updateEffects(dt) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.vx *= 1 - 2.2 * dt;
-    p.vy = p.vy * (1 - 2.2 * dt) + (p.buoyant ? -0.15 : 0.05) * dt;
+    p.vy = p.vy * (1 - 2.2 * dt) + (p.kind === 'heart' ? -0.35 : p.buoyant ? -0.15 : 0.05) * dt;
     p.rot += p.vr * dt;
   }
   particles = particles.filter((p) => p.age < p.life && p.y > BOWL.WATER_Y);
@@ -495,7 +495,20 @@ function drawParticles() {
     ctx.globalAlpha = 1 - k;
     ctx.translate(px, py);
     ctx.rotate(p.rot);
-    if (p.kind === 'bubble') {
+    if (p.kind === 'heart') {
+      const r = p.r * G.R;
+      ctx.rotate(-p.rot + Math.sin(p.age * 5 + p.x * 20) * 0.25);
+      ctx.beginPath();
+      ctx.moveTo(0, r * 0.35);
+      ctx.bezierCurveTo(-r * 1.3, -r * 0.5, -r * 0.45, -r * 1.35, 0, -r * 0.55);
+      ctx.bezierCurveTo(r * 0.45, -r * 1.35, r * 1.3, -r * 0.5, 0, r * 0.35);
+      ctx.fillStyle = p.color;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(-r * 0.35, -r * 0.6, r * 0.18, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fill();
+    } else if (p.kind === 'bubble') {
       ctx.beginPath();
       ctx.arc(0, 0, p.r * G.R, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(230,255,255,0.8)';
@@ -987,7 +1000,7 @@ function startDeath(sim, cause, announce) {
   sim.pending = 0;
   meals = meals.filter((m) => m.fishId !== sim.id);
   if (selectedId === sim.id) deselect();
-  if (announce) toast(R.deathMessage(sim.data.name, cause));
+  if (announce) toast(R.deathMessage(sim.data.name, cause, sim.data.blame));
 }
 
 // Flakes: just above one fish, or spread across the surface for everyone.
@@ -1386,6 +1399,18 @@ function render(now, perf) {
 
 let livingSims = 0;
 
+// Hearts floating up through the water: from one fish, or from across the
+// bottom of the bowl when sent to everyone.
+function heartBurst(sim) {
+  const colors = ['#ff4f79', '#ff7aa2', '#e0245e', '#ff9fbf'];
+  const fromFish = sim && sim.state === 'alive';
+  for (let i = 0; i < (fromFish ? 12 : 18); i++) {
+    const x = fromFish ? sim.x + rand(-0.06, 0.06) : rand(-0.6, 0.6);
+    const y = fromFish ? sim.y + rand(-0.03, 0.03) : BOWL.GRAVEL_Y - rand(0.02, 0.2);
+    particles.push({ kind: 'heart', color: pick(colors), x, y, vx: rand(-0.08, 0.08), vy: rand(-0.35, -0.15), r: rand(0.03, 0.05), rot: 0, vr: 0, age: -rand(0, 0.5), life: 3.5, buoyant: true });
+  }
+}
+
 // Burps from stuffed fish, and 12-hour birthdays.
 function fishLife(now, perf) {
   for (const s of sims.values()) {
@@ -1464,6 +1489,10 @@ let online = navigator.onLine;
 let selectedId = null;
 let lastTouch = 0;       // for the 5-second card timeout
 const seenLog = new Set();
+const seenHearts = new Set();
+const heartKey = (h) => `${h.at}|${h.by}|${h.fishId}`;
+const HEART_SHOW_MS = 10000;     // hearts older than this aren't played (e.g. opening the app later)
+let loveReadyAt = 0;             // one heart per phone every 3 seconds
 let housekeepingAt = 0;
 
 const logKey = (e) => `${e.at}|${e.by}|${e.fishId}`;
@@ -1549,9 +1578,20 @@ function applyRoom(next) {
   }
   for (const [targets, spread] of drops) dropFlakes(targets.filter((s) => s.state === 'alive'), spread);
 
+  // 3. New hearts → a burst of hearts rising on every phone.
+  for (const h of [...(next.hearts || [])].reverse()) {
+    const k = heartKey(h);
+    if (seenHearts.has(k)) continue;
+    seenHearts.add(k);
+    if (now - h.at > HEART_SHOW_MS) continue;
+    heartBurst(h.fishId ? sims.get(h.fishId) : null);
+    toast(R.describeHeart(h));
+  }
+
   refreshControls();
   refreshActivity(now);
   if (!$('sheet').hidden && sheetKind === 'history') showHistory();
+  if (!$('sheet').hidden && sheetKind === 'board') showBoard();
 }
 
 // Starvation happens by the formula, even with nobody feeding. Every phone
@@ -1646,6 +1686,7 @@ function openBowl(code) {
   sims.clear();
   meals = [];
   seenLog.clear();
+  seenHearts.clear();
   room = null;
   serverRoom = null;
   pendingOps = [];
@@ -1692,6 +1733,7 @@ function refreshControls() {
   $('addBtn').disabled = !canWrite() || full;
   $('fullMsg').hidden = !full;
   $('feedBtn').disabled = !canWrite() || living === 0;
+  refreshLove();
   // Just a warning: feeding is still allowed.
   const stuffed = [...sims.values()].filter((s) => popWarning(s, now) === 1).map((s) => s.data.name);
   $('feedWarn').hidden = !stuffed.length;
@@ -1739,6 +1781,28 @@ async function addFish() {
   }, () => api.addFish(roomCode, by, id, at));
 }
 
+// ❤️ Send love: to everyone, or to the selected fish. One per phone every 3 s.
+async function sendLove(fishId = null) {
+  if (!canWrite() || performance.now() < loveReadyAt) return;
+  loveReadyAt = performance.now() + R.HEART_COOLDOWN_MS;
+  refreshLove();
+  setTimeout(refreshLove, R.HEART_COOLDOWN_MS + 50);
+  const at = Date.now();
+  const by = nickname;
+  const key = heartKey({ at, by, fishId });
+  await runOp({
+    at,
+    apply: (r) => R.sendHeart(r, { fishId, by, now: at }).room,
+    confirmedBy: (d) => (d.hearts || []).some((h) => heartKey(h) === key)
+  }, () => api.sendHeart(roomCode, by, fishId, at));
+}
+
+function refreshLove() {
+  const waiting = performance.now() < loveReadyAt;
+  $('loveBtn').disabled = !canWrite() || waiting;
+  $('fcLove').disabled = !canWrite() || waiting;
+}
+
 async function feed(fishId = null) {
   if (!canWrite()) return;
   const at = Date.now();
@@ -1779,6 +1843,7 @@ function select(sim) {
   sim.pauseUntil = lastTouch + 1200;
   $('fcSwatch').style.background = `linear-gradient(180deg, ${paletteOf(sim.data.color).top}, ${paletteOf(sim.data.color).mid} 50%, ${paletteOf(sim.data.color).belly})`;
   $('fcName').textContent = `${sim.data.name} · ${R.typeLabel(sim.data)} · ${R.ageLabel(sim.data, Date.now())}`;
+  $('fcLove').textContent = `❤️ ${sim.data.name}`;
   $('fishCard').hidden = false;
   cardValuesAt = 0;
   updateCard(Date.now(), lastTouch);
@@ -1854,6 +1919,36 @@ function showHistory() {
   openSheet('Feeding history', `<ul class="history">${items}</ul>`, 'history');
 }
 
+// 🏆 Blame board: this week's awards, the full table, and the hall of fame.
+function showBoard() {
+  const b = R.blameBoard(room || {}, Date.now());
+  const award = (icon, title, w, one, many) => `
+    <div class="award"><span class="award-icon">${icon}</span>
+      <div><div class="award-title">${title}</div>
+      <div class="award-who">${w ? `${escapeHtml(R.joinNames(w.names))} · ${w.count} ${w.count === 1 ? one : many}` : '<span class="muted">Nobody yet</span>'}</div></div></div>`;
+  const oldest = b.oldestFish ? `${escapeHtml(b.oldestFish.name)} · ${b.oldestFish.hours} hour${b.oldestFish.hours === 1 ? '' : 's'}` : '<span class="muted">No fish yet</span>';
+  const rows = b.table.map((p) => `<tr><td>${escapeHtml(p.nick)}</td><td>${p.feeds}</td><td>${p.added}</td><td>${p.overfed}</td></tr>`).join('');
+  const rec = b.record;
+  const typeName = rec ? (R.FISH_TYPES.find((t) => t.key === rec.type) || { label: rec.type }).label : '';
+  openSheet('🏆 Blame board', `
+    <p class="sheet-note small">This week (resets Monday at midnight)</p>
+    <div class="awards">
+      ${award('👨‍🍳', 'Head Chef', b.headChef, 'feed', 'feeds')}
+      ${award('💀', 'Grim Feeder', b.grimFeeder, 'fish overfed', 'fish overfed')}
+      ${award('🐣', 'Fish Dealer', b.fishDealer, 'fish added', 'fish added')}
+      <div class="award"><span class="award-icon">🧓</span><div><div class="award-title">Oldest Fish</div><div class="award-who">${oldest}</div></div></div>
+    </div>
+    ${rows ? `<table class="board"><thead><tr><th>Player</th><th>Feeds</th><th>Added</th><th>Overfed</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<p class="sheet-note">Nobody has fed or added fish this week yet.</p>'}
+    <h3 class="hof">Hall of fame</h3>
+    <ul class="history">
+      <li><span>Oldest fish ever</span><span class="muted">${rec ? `${escapeHtml(rec.name)} the ${escapeHtml(typeName)} · ${rec.ageHours} hour${rec.ageHours === 1 ? '' : 's'} · ${rec.cause === 'overfed' ? 'ate too much' : 'starved'}` : '—'}</span></li>
+      <li><span>Last week's Head Chef</span><span class="muted">${b.lastWeek && b.lastWeek.headChef ? escapeHtml(b.lastWeek.headChef) : '—'}</span></li>
+      <li><span>Last week's Grim Feeder</span><span class="muted">${b.lastWeek && b.lastWeek.grimFeeder ? escapeHtml(b.lastWeek.grimFeeder) : '—'}</span></li>
+    </ul>
+  `, 'board');
+}
+
 function showMenu() {
   openSheet('Menu', `
     <label class="field">
@@ -1917,7 +2012,15 @@ function startDemo() {
       { by: 'Priya', at: now - 47 * 60e3, fishId: null, fishName: null },
       { by: 'Sam', at: now - 5 * 3600e3, fishId: null, fishName: null }
     ],
-    fish
+    fish,
+    hearts: [],
+    week: { start: R.weekStart(now), players: [
+      { nick: 'Priya', feeds: 9, added: 3, overfed: 2 },
+      { nick: 'Sam', feeds: 9, added: 2, overfed: 0 },
+      { nick: 'Alex', feeds: 4, added: 2, overfed: 1 }
+    ] },
+    lastWeek: { headChef: 'Alex', grimFeeder: 'Priya' },
+    record: { name: 'Admiral Bubbles', type: 'fantail', ageHours: 41, cause: 'starved' }
   };
   // Pretend database: same rules, a short delay, then the same update path.
   const later = (fn) => new Promise((resolve, reject) => setTimeout(() => {
@@ -1926,7 +2029,8 @@ function startDemo() {
   api = {
     addFish: (_code, by, id, at) => later(() => R.addFish(serverRoom, { id, by, now: at, rand: R.seededRandom(id) })),
     feed: (_code, by, fishId, at) => later(() => R.feed(serverRoom, { fishId, by, now: at })),
-    housekeeping: () => later(() => R.recordDeaths(serverRoom, Date.now()))
+    housekeeping: () => later(() => R.recordDeaths(serverRoom, Date.now())),
+    sendHeart: (_code, by, fishId, at) => later(() => R.sendHeart(serverRoom, { fishId, by, now: at }))
   };
   roomCode = 'DEMO';
   show('bowl');
@@ -1972,6 +2076,9 @@ $('joinForm').addEventListener('submit', async (e) => {
 $('nickInput').addEventListener('change', () => saveNicknameFrom($('nickInput')));
 $('addBtn').addEventListener('click', addFish);
 $('feedBtn').addEventListener('click', () => feed(null));
+$('loveBtn').addEventListener('click', () => sendLove(null));
+$('fcLove').addEventListener('click', () => { lastTouch = performance.now(); if (selectedId) sendLove(selectedId); });
+$('boardBtn').addEventListener('click', showBoard);
 $('fcFeed').addEventListener('click', () => {
   lastTouch = performance.now();
   if (selectedId) feed(selectedId);
