@@ -17,6 +17,10 @@ export const TEXT_MAX = 20;             // nicknames and fish names
 export const CLEANUP_AFTER_MS = 60 * 1000;
 export const DEFAULT_NICKNAME = 'Someone';
 export const PARTY_HAT_HOURS = 12;      // a fish gets a party hat at this age
+export const HEARTS_MAX = 10;           // the bowl keeps only the newest hearts
+export const HEART_COOLDOWN_MS = 3000;  // one heart per phone every 3 seconds
+export const PLAYERS_MAX = 30;          // blame board: players tracked per week
+const WEEK_MS = 7 * 24 * 3600 * 1000;
 
 const MS_PER_POINT = SECONDS_PER_POINT * 1000;
 
@@ -243,8 +247,120 @@ function clone(room) {
   return {
     ...room,
     feedLog: [...(room.feedLog || [])],
-    fish: Object.fromEntries(Object.entries(room.fish || {}).map(([id, f]) => [id, { ...f }]))
+    fish: Object.fromEntries(Object.entries(room.fish || {}).map(([id, f]) => [id, { ...f }])),
+    ...(room.hearts ? { hearts: [...room.hearts] } : {}),
+    ...(room.week ? { week: { start: room.week.start, players: (room.week.players || []).map((p) => ({ ...p })) } } : {})
   };
+}
+
+// ---------------------------------------------------------------------------
+// Blame board: weekly counts, the Monday reset, and the oldest-fish record
+// ---------------------------------------------------------------------------
+
+// Monday 00:00 (on this phone's clock) of the week that `now` is in.
+export function weekStart(now) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  const sinceMonday = (d.getDay() + 6) % 7;   // Monday = 0 … Sunday = 6
+  d.setDate(d.getDate() - sinceMonday);
+  return d.getTime();
+}
+
+// Everyone with the top count of `field` (ties are shared), or null if nobody
+// has any.
+export function winners(players, field) {
+  const best = Math.max(0, ...(players || []).map((p) => p[field] || 0));
+  if (!best) return null;
+  return { names: players.filter((p) => (p[field] || 0) === best).map((p) => p.nick), count: best };
+}
+
+export const joinNames = (names) => names.length <= 2 ? names.join(' & ') : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+
+// Make sure `next.week` is this week. If a new week has started, last week's
+// Head Chef and Grim Feeder move into `lastWeek` first. (Changes `next`.)
+function ensureWeek(next, now) {
+  const start = weekStart(now);
+  if (next.week && next.week.start === start) return;
+  if (next.week && next.week.start < start && (next.week.players || []).length) {
+    const chef = winners(next.week.players, 'feeds');
+    const grim = winners(next.week.players, 'overfed');
+    next.lastWeek = {
+      headChef: chef ? joinNames(chef.names) : null,
+      grimFeeder: grim ? joinNames(grim.names) : null
+    };
+  }
+  next.week = { start, players: [] };
+}
+
+// This week's board as it should look right now (a new week may have started
+// since anyone last saved).
+export function currentWeek(room, now) {
+  const view = { week: room.week, lastWeek: room.lastWeek ?? null };
+  if (room.week) view.week = { start: room.week.start, players: room.week.players || [] };
+  ensureWeek(view, now);
+  return view;
+}
+
+// Add to one player's count for this week. (Changes `next`.)
+function bump(next, nick, field, now) {
+  ensureWeek(next, now);
+  const players = next.week.players;
+  let p = players.find((x) => x.nick === nick);
+  if (!p) {
+    if (players.length >= PLAYERS_MAX) {
+      // Full: make room by dropping the least active player.
+      const total = (x) => x.feeds + x.added + x.overfed;
+      players.sort((a, b) => total(b) - total(a)).pop();
+    }
+    p = { nick, feeds: 0, added: 0, overfed: 0 };
+    players.push(p);
+  }
+  p[field] += 1;
+}
+
+// When a fish dies, it may be the oldest fish this bowl has ever had.
+function updateRecord(next, f) {
+  const ageHours = Math.max(0, Math.floor((f.diedAt - f.addedAt) / 3600000));
+  if (next.record && next.record.ageHours >= ageHours) return;
+  next.record = { name: f.name, type: typeOf(f), ageHours, cause: f.cause };
+}
+
+// The weekly awards and the hall of fame, for the Blame board screen.
+export function blameBoard(room, now) {
+  const { week, lastWeek } = currentWeek(room, now);
+  const players = week.players.filter((p) => p.feeds + p.added + p.overfed > 0);
+  const oldest = livingFish(room, now).sort((a, b) => a.addedAt - b.addedAt)[0];
+  return {
+    headChef: winners(players, 'feeds'),
+    grimFeeder: winners(players, 'overfed'),
+    fishDealer: winners(players, 'added'),
+    oldestFish: oldest ? { name: oldest.name, hours: ageHours(oldest, now) } : null,
+    table: [...players].sort((a, b) => b.feeds - a.feeds || b.added - a.added || a.nick.localeCompare(b.nick)),
+    record: room.record ?? null,
+    lastWeek: lastWeek ?? null
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Hearts
+// ---------------------------------------------------------------------------
+
+// Send love to everyone, or to one fish. Keeps the newest 10 hearts.
+export function sendHeart(room, { fishId = null, by, now }) {
+  const next = clone(room);
+  let fishName = null;
+  if (fishId != null) {
+    const f = next.fish[fishId];
+    if (!f || !isAlive(f, now)) throw new RuleError('gone', 'Too late — that fish is gone');
+    fishName = f.name;
+  }
+  const heart = { by: cleanNickname(by), at: now, fishId, fishName };
+  next.hearts = [heart, ...(next.hearts || [])].slice(0, HEARTS_MAX);
+  return { room: next, heart };
+}
+
+export function describeHeart(h) {
+  return h.fishName ? `${h.by} sent love to ${h.fishName} ❤️` : `${h.by} sent love ❤️`;
 }
 
 // Add one fish. Clears out dead fish first so the bowl never holds more than
@@ -270,6 +386,7 @@ export function addFish(room, { id, by, now, rand = Math.random }) {
     cause: null
   };
   next.fish[id] = fish;
+  bump(next, fish.addedBy, 'added', now);
   return { room: next, fish: { id, ...fish } };
 }
 
@@ -296,6 +413,7 @@ export function feed(room, { fishId = null, by, now }) {
     if (cur <= 0) {
       // Already starved; nobody had recorded it yet.
       Object.assign(f, starvedFields(f));
+      updateRecord(next, f);
       died.push({ id, name: f.name, cause: 'starved' });
       continue;
     }
@@ -305,7 +423,10 @@ export function feed(room, { fishId = null, by, now }) {
     if (f.fullness > MAX_FULLNESS) {
       f.diedAt = now;
       f.cause = 'overfed';
-      died.push({ id, name: f.name, cause: 'overfed' });
+      f.blame = nickname;           // whoever gave the fatal feed gets the blame
+      updateRecord(next, f);
+      bump(next, nickname, 'overfed', now);
+      died.push({ id, name: f.name, cause: 'overfed', blame: nickname });
     }
   }
 
@@ -313,6 +434,7 @@ export function feed(room, { fishId = null, by, now }) {
     throw new RuleError('empty', 'There are no fish to feed');
   }
 
+  bump(next, nickname, 'feeds', now);
   next.lastFedAt = now;
   next.lastFedBy = nickname;
   next.feedLog = [{ by: nickname, at: now, fishId, fishName }, ...next.feedLog].slice(0, FEED_LOG_MAX);
@@ -339,10 +461,12 @@ export function recordDeaths(room, now) {
   for (const [id, f] of Object.entries(next.fish)) {
     if (f.diedAt == null && currentFullness(f, now) <= 0) {
       Object.assign(f, starvedFields(f));
+      updateRecord(next, f);
       starved.push({ id, name: f.name });
       changed = true;
     }
   }
+  if (changed) ensureWeek(next, now);
   return { room: next, changed, starved };
 }
 
@@ -361,8 +485,9 @@ export function describeFeed(entry) {
   return entry.fishId == null ? `${entry.by} fed everyone` : `${entry.by} fed ${entry.fishName || 'a fish'}`;
 }
 
-export function deathMessage(name, cause) {
-  return cause === 'overfed' ? `${name} ate too much 😢` : `${name} starved 😢`;
+export function deathMessage(name, cause, blame = null) {
+  if (cause !== 'overfed') return `${name} starved 😢`;
+  return blame ? `${name} ate too much 😢 — last fed by ${blame}` : `${name} ate too much 😢`;
 }
 
 export function timeAgo(then, now) {

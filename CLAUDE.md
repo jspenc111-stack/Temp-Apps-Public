@@ -33,4 +33,4 @@ Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/fishbowlapp/
 7. **Least privilege.** Don't loosen `firestore.rules`, add Firebase products, or add third-party services without explaining why in the PR. Never allow listing all rooms.
 8. **Keep database use small.** Don't sync fish swimming positions or write on a timer; only write when someone adds, feeds, or a death/cleanup is recorded.
 9. **Small PRs.** One feature or fix per PR, with a clear title.
-10. **Firestore rules have a budget.** Firestore stops after 1000 checks per request, so keep per-fish and per-log-entry checks small, and test a completely full bowl (15 fish, 20 log entries, max-length names) against the Firestore emulator after changing `firestore.rules`.
+10. **Firestore rules have a budget.** Firestore stops after 1000 checks per request, so keep per-fish and per-log-entry checks small, and test a completely full bowl (15 fish, 20 log entries, 10 hearts, 30 blame-board players, max-length names) against the Firestore emulator after changing `firestore.rules`.

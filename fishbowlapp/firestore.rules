@@ -8,6 +8,8 @@ rules_version = '2';
 // - Only rooms/{code} exists, and the code must look like a real room code.
 // - A bowl holds at most 15 fish and a feed log of at most 20 entries.
 // - Nicknames, fish names and fish types are at most 20 characters.
+// - At most 10 hearts and 30 players on the weekly blame board. Like the
+//   feed log, hearts are append-only (one new heart at the front).
 // - The feed log is append-only: each save may add one new entry at the
 //   front, and older entries can't be changed or erased.
 // - Bowls can't be deleted.
@@ -34,8 +36,15 @@ service cloud.firestore {
 
     // Kept as cheap as possible: a full bowl has 15 fish to check. Fish saved
     // before types existed have no `type`.
+    // The fish's texts in one pattern check (much cheaper than separate
+    // checks): name, addedBy and type, each 20 characters or fewer. They're
+    // joined with a line break, which none of them can contain. Fish saved
+    // before types existed have no `type`. (A fish's `blame` is the nickname
+    // of whoever gave the fatal feed; it's checked as the new feed-log entry
+    // in the same save, so it isn't checked again here, to stay in budget.)
     function fishOk(f) {
-      return f.name.size() <= 20 && f.addedBy.size() <= 20 && f.get('type', '').size() <= 20;
+      return (f.name + '\n' + f.addedBy + '\n' + f.get('type', ''))
+        .matches('[^\\n]{0,20}\\n[^\\n]{0,20}\\n[^\\n]{0,20}');
     }
 
     function validFishMap(m) {
@@ -57,25 +66,35 @@ service cloud.firestore {
         && (e.get('fishName', null) == null || shortText(e.fishName));
     }
 
-    // The log stays the same, or gains exactly one new entry at the front
-    // (dropping the oldest once it holds 20).
-    function logChangeOk(next, prev) {
+    // A list stays the same, or gains exactly one new entry at the front
+    // (dropping the oldest once it holds `max`). Used for the feed log (20)
+    // and hearts (10).
+    function appendOk(next, prev, max) {
       let n = next.size();
-      return next is list && n <= 20
+      return next is list && n <= max
         && (next == prev
-            || ((n == prev.size() + 1 || (n == 20 && prev.size() == 20))
+            || ((n == prev.size() + 1 || (n == max && prev.size() == max))
                 && logEntryOk(next[0])
                 && (n == 1 || next[1:n] == prev[0:n - 1])));
     }
 
+    // Weekly blame board: at most 30 players. (Their nicknames are checked
+    // where they enter the bowl: feed-log entries, hearts, and new fish.
+    // Checking 30 names again on every save would blow Firestore's budget.)
+    function playersOk(p) {
+      return p is list && p.size() <= 30;
+    }
+
     function validRoom(d) {
-      return d.keys().hasOnly(['createdAt', 'lastFedAt', 'lastFedBy', 'feedLog', 'fish'])
+      return d.keys().hasOnly(['createdAt', 'lastFedAt', 'lastFedBy', 'feedLog', 'fish', 'hearts', 'week', 'lastWeek', 'record'])
         && d.keys().hasAll(['createdAt', 'feedLog', 'fish'])
         && d.createdAt is timestamp
         && (d.get('lastFedAt', null) == null || d.lastFedAt is timestamp)
         && (d.get('lastFedBy', null) == null || shortText(d.lastFedBy))
         && d.fish is map
-        && validFishMap(d.fish);
+        && validFishMap(d.fish)
+        && (d.get('week', null) == null || playersOk(d.week.players))
+        && (d.get('record', null) == null || (d.record.name + '\n' + d.record.type).matches('[^\\n]{0,20}\\n[^\\n]{0,20}'));
     }
 
     match /rooms/{code} {
@@ -87,11 +106,13 @@ service cloud.firestore {
       allow create: if signedIn() && isRoomCode(code)
         && request.resource.data.createdAt == request.time
         && request.resource.data.feedLog == []
+        && request.resource.data.get('hearts', []) == []
         && validRoom(request.resource.data);
 
       allow update: if signedIn() && isRoomCode(code)
         && request.resource.data.createdAt == resource.data.createdAt
-        && logChangeOk(request.resource.data.feedLog, resource.data.feedLog)
+        && appendOk(request.resource.data.feedLog, resource.data.feedLog, 20)
+        && appendOk(request.resource.data.get('hearts', []), resource.data.get('hearts', []), 10)
         && validRoom(request.resource.data);
 
       allow delete: if false;

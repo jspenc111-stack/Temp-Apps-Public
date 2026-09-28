@@ -2,7 +2,6 @@
 
 > This is the source of truth for how the app behaves. If behavior changes, update this file in the same pull request.
 > It's the owner's spec as written, adjusted only for this repo (folder, live link, file layout). Changes made here on the owner's request are marked **(repo)**, and details worked out while building are in **Notes for this repo** at the end.
-> 🚧 marks parts of the spec that aren't built yet (the ❤️ and 🏆 social features come in the next pull request).
 
 ## What this is
 
@@ -60,14 +59,14 @@ Shared data lives in **Firebase Firestore** (Google's free online database). The
 - **Feeding history:** tapping the activity line opens a short list of the most recent feeds (up to 20), e.g. "Sam fed everyone · 2:14 PM", "Priya fed Pickle · 11:02 AM". Name individual fish by their fun name (e.g. "Priya fed Pickle"). Save the name in the log entry, so it still reads correctly after that fish is gone. Anyone in the bowl can feed; this just shows who did.
 - Header shows the room code and a **Share** button. Share opens the phone's share menu (Web Share API) with the join link; if that's unavailable, copy the link and show "Link copied".
 - Menu: change nickname, **Leave bowl** (forgets the room on this phone only; the bowl keeps existing for friends).
-- 🚧 **❤️ Send love button** (small, next to Feed all): sends a heart to everyone in the bowl.
+- **❤️ Send love button** (small, next to Feed all): sends a heart to everyone in the bowl.
   - Every open phone sees a burst of hearts floating up through the water, and a toast: "Sam sent love ❤️".
   - Sending from a selected fish's card ("❤️ Pickle") makes the hearts rise from that fish, and the toast reads "Sam sent love to Pickle ❤️".
   - Limit: one heart per phone every 3 seconds (the button briefly greys out), to keep it fun rather than spammy.
   - Hearts are only shown live; they don't appear if you open the app later.
-- 🚧 **🏆 Blame board button** in the header: opens the weekly leaderboard (see "Blame board").
+- **🏆 Blame board button** in the header: opens the weekly leaderboard (see "Blame board").
 
-## Blame board 🚧
+## Blame board
 
 A playful weekly leaderboard, so friends can take credit (or blame). It resets every **Monday at midnight**, based on the phone's clock.
 
@@ -129,13 +128,13 @@ rooms/K7QM3P
   lastFedAt:   timestamp | null
   lastFedBy:   string | null            // nickname
   feedLog:     [ { by: string, at: number (ms), fishId: string | null, fishName: string | null } ]   // null = fed all; newest first, keep only the last 20
-  hearts:      [ { by: string, at: number (ms), fishId: string | null, fishName: string | null } ]  // 🚧 newest first, keep only the last 10
-  week: {                               // 🚧
+  hearts:      [ { by: string, at: number (ms), fishId: string | null, fishName: string | null } ]  // newest first, keep only the last 10
+  week: {
     start:     number (ms)              // Monday 00:00 of the current week
     players:   [ { nick: string, feeds: number, added: number, overfed: number } ]   // max 30 entries
   }
-  lastWeek:    { headChef: string | null, grimFeeder: string | null } | null        // 🚧
-  record:      { name, type, ageHours: number, cause } | null     // 🚧 oldest fish ever
+  lastWeek:    { headChef: string | null, grimFeeder: string | null } | null
+  record:      { name, type, ageHours: number, cause } | null     // oldest fish ever
   fish: {
     <fishId>: {
       name:        string               // fun auto-name, unique in the bowl
@@ -147,19 +146,19 @@ rooms/K7QM3P
       fullnessAt:  number (ms)
       diedAt:      number (ms) | null
       cause:       "overfed" | "starved" | null
-      blame:       string | null        // 🚧 nickname of whoever gave the fatal feed (overfed only)
+      blame:       string | null        // nickname of whoever gave the fatal feed (overfed only)
     }
   }
 ```
 
 - **Add fish** and **Feed** must run as Firestore **transactions**, so two friends tapping at the same moment can't overwrite each other or exceed 15 fish. (A transaction reads the latest bowl, changes it, and saves it as one step. If someone else changed it in between, it automatically retries.)
-- On Feed, use each fed fish's *current* calculated fullness, add 5, and mark any fish that goes over 100 as dead (`cause: "overfed"`). **Feed all** changes every living fish; **Feed this fish** changes only that one (if it has died in the meantime, do nothing and show "Too late — that fish is gone"). In the same transaction, add `{by: nickname, at: now, fishId, fishName}` to the front of `feedLog` (`fishId` is null for Feed all) and trim it to 20 entries. Also in the same transaction (🚧):
-- 🚧 Add 1 to the feeder's `feeds` in `week.players`.
-- 🚧 For each fish killed by this feed, set its `blame` to the feeder and add 1 to the feeder's `overfed`.
-- 🚧 **Add fish** adds 1 to the adder's `added`.
-- 🚧 **Weekly reset:** any write that happens after next Monday midnight first saves the winners into `lastWeek`, then clears `week.players` and sets a new `week.start`.
-- 🚧 **Oldest-fish record:** when a fish dies, compare its age with `record` and replace the record if this fish lived longer.
-- 🚧 **Sending a heart** is its own small transaction: add to the front of `hearts` and trim to 10. Phones animate hearts that arrive through the live listener, if they're less than 10 seconds old.
+- On Feed, use each fed fish's *current* calculated fullness, add 5, and mark any fish that goes over 100 as dead (`cause: "overfed"`). **Feed all** changes every living fish; **Feed this fish** changes only that one (if it has died in the meantime, do nothing and show "Too late — that fish is gone"). In the same transaction, add `{by: nickname, at: now, fishId, fishName}` to the front of `feedLog` (`fishId` is null for Feed all) and trim it to 20 entries. Also in the same transaction:
+- Add 1 to the feeder's `feeds` in `week.players`.
+- For each fish killed by this feed, set its `blame` to the feeder and add 1 to the feeder's `overfed`.
+- **Add fish** adds 1 to the adder's `added`.
+- **Weekly reset:** any write that happens after next Monday midnight first saves the winners into `lastWeek`, then clears `week.players` and sets a new `week.start`.
+- **Oldest-fish record:** when a fish dies, compare its age with `record` and replace the record if this fish lived longer.
+- **Sending a heart** is its own small transaction: add to the front of `hearts` and trim to 10. Phones animate hearts that arrive through the live listener, if they're less than 10 seconds old.
 - Starvation happens on its own through the formula. Any open phone that sees a starved fish records `diedAt`/`cause` in a transaction.
 - Dead fish are removed from the document after their fade-out (about 1 minute after `diedAt` is fine). Any phone may do this cleanup.
 - **Fish swimming positions are NOT synced.** Each phone animates its fish locally. Only the fish list, colors, fullness, and deaths are shared. This keeps database usage tiny.
@@ -174,7 +173,7 @@ Write a rules file that:
 - only allows the `rooms/{code}` path, where the code matches the 6-character format,
 - rejects a bowl with more than 15 fish or a `feedLog` longer than 20 entries,
 - rejects nicknames, fish names, and fish types longer than 20 characters,
-- 🚧 rejects more than 10 `hearts` or more than 30 `week.players` entries,
+- rejects more than 10 `hearts` or more than 30 `week.players` entries,
 - rejects deleting rooms.
 
 Include the file in the repo. The owner pastes it into the Firebase console (see setup steps below).
@@ -339,13 +338,13 @@ CLAUDE.md                           // rules for Claude Code
 
 ## Tests
 
-`node fishbowlapp/tests/run.mjs` tests the game logic in `fish-rules.js` with no internet and no npm packages: fullness math over time (full fish starves at exactly 24 h), +5 per feed, feeding one fish leaves the others unchanged, fish names are unique in the bowl, the name list has at least 200 unique names, every new fish gets a valid type, old fish with no type count as goldfish, the 20-feed limit (21st feed from empty kills it), `feedsUntilPop` returns 2 at fullness 91–95 and 1 at 96–100, overfeed death, starvation, the feed log keeping only 20 entries, the 15-fish limit, age in hours, the party hat at exactly 12 hours, 🚧 blame-board counts (feeds, added, overfed blame goes to the fatal feeder), 🚧 the Monday weekly reset moving winners into last week, 🚧 ties, 🚧 the oldest-fish record, 🚧 hearts trimmed to 10, and room-code format. Also a privacy test that scans public files for email addresses and secret-looking keys (other than the known Firebase web config). GitHub runs the tests on every pull request and before every deploy.
+`node fishbowlapp/tests/run.mjs` tests the game logic in `fish-rules.js` with no internet and no npm packages: fullness math over time (full fish starves at exactly 24 h), +5 per feed, feeding one fish leaves the others unchanged, fish names are unique in the bowl, the name list has at least 200 unique names, every new fish gets a valid type, old fish with no type count as goldfish, the 20-feed limit (21st feed from empty kills it), `feedsUntilPop` returns 2 at fullness 91–95 and 1 at 96–100, overfeed death, starvation, the feed log keeping only 20 entries, the 15-fish limit, age in hours, the party hat at exactly 12 hours, blame-board counts (feeds, added, overfed blame goes to the fatal feeder), the Monday weekly reset moving winners into last week, ties, the oldest-fish record, hearts trimmed to 10, and room-code format. Also a privacy test that scans public files for email addresses and secret-looking keys (other than the known Firebase web config). GitHub runs the tests on every pull request and before every deploy.
 
 ## Deployment
 
 - Uses the owner's existing public repo `Temp-Apps-Public`, folder `fishbowlapp/`. GitHub Pages via GitHub Actions on every push to `main`. The workflow publishes the **whole repo**, so the other apps in it (Counter, knittingapp) stay live too.
 - Live URL: **https://jspenc111-stack.github.io/Temp-Apps-Public/fishbowlapp/**
-- `?demo` shows a local-only sample bowl with no Firebase, for previewing.
+- `?demo` shows a local-only sample bowl with no Firebase, for previewing (including a lived-in Blame board).
 
 ## Firebase config (provided by the owner)
 
@@ -371,7 +370,10 @@ These are details worked out while building, which the spec left open:
 
 - **The feed log is append-only** in `firestore.rules`: a save may add one new entry at the front (dropping the oldest once there are 20), and older entries can't be changed or erased. This keeps the rules within Firestore's limit of 1000 checks per request even for a completely full bowl (only the new entry needs checking), and it means nobody can rewrite the feeding history.
 - Because that rule compares against the saved bowl, a save built on an out-of-date copy (two friends tapping at the same instant) can be refused. `bowl.js` then retries the whole transaction, up to 5 times with a short random pause, so both feeds land.
-- **The per-fish checks in the rules are as cheap as possible** for the same 1000-check reason: a fish's `name`, `addedBy` and `type` are each checked to be 20 characters or fewer, without separate "is it text" checks (those roughly doubled the cost). With 15 fish, a completely full bowl with every field at maximum length still passes with room to spare.
+- **The rules are written to stay inside Firestore's 1000-check budget** with a completely full bowl (15 fish, 20 feed-log entries, 10 hearts, 30 players, every text at maximum length), measured on the Firestore emulator:
+  - Each fish's `name`, `addedBy` and `type` are checked together in one pattern (each 20 characters or fewer). That's much cheaper than separate checks, and it also rejects anything that isn't text.
+  - Hearts are append-only like the feed log: a save may add one heart at the front (dropping the oldest once there are 10), so only the new heart needs checking.
+  - **Nicknames are checked where they enter the bowl**: new feed-log entries, new hearts, and new fish (`addedBy`). The copies of those nicknames in `week.players` and a fish's `blame` aren't checked again on every save; checking 30 players' names on each save alone would go over the budget. The players list is still limited to 30 entries.
 - **Adding a fish clears out dead fish first**, so the bowl document never holds more than 15 fish in total (the rules count dead fish too).
 - A starved fish's `diedAt` is recorded as the moment it actually reached 0 (worked out from the formula), not the moment a phone noticed.
 - **Data is instant, looks follow the food.** The saved bowl changes the moment someone feeds (and the phone that taps shows it straight away by applying the same game rules locally, then saves it with the same tap time, fish id, name, type and color). What a fish *looks* like follows the eat-then-grow sequence above, capped at 4 seconds. The fullness bar on the card and the "about to pop" warnings follow the look.
@@ -382,4 +384,6 @@ These are details worked out while building, which the spec left open:
 - Names that belong to famous cartoon or movie characters (for example Coral, Pearl, Oscar) are left out of the name list.
 - **The castle** sits left of centre (the left plant moved a little further left to make room). About 1 in 8 times a fish picks somewhere new to go, it takes a castle trip instead: through the arched doorway to the other side, or a short rest hiding behind the castle. Flakes that land on the castle stay on top of it. The pleco (a bottom dweller) doesn't take castle trips.
 - The bowl was already about 92% of a phone's width; it's now a named setting (`BOWL_WIDTH_SHARE`) with a larger cap for big screens.
+- **Blame board details:** the weekly board is worked out on each phone from `week`, so if a new week has started but nobody has saved yet, the board already shows an empty week and last week's winners. Ties in `lastWeek` are saved as one text, e.g. "Sam & Priya". The oldest-fish record compares whole hours; on a tie the earlier record stays. If a 31st player joins in one week, the least active player is dropped from that week's list.
+- **Hearts** are played on every phone that has the bowl open when they arrive (and for up to 10 seconds after, e.g. while reconnecting). The phone that sends one sees it straight away.
 - Tapping empty water also sends a ripple that makes nearby fish dart away (a small extra from v1).

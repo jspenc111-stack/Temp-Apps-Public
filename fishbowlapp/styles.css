@@ -291,3 +291,20 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .toast, .sheet { animation: none; }
 }
+
+/* ❤️ Send love and the 🏆 Blame board */
+.buttons .btn-love { flex: 0 0 56px; padding: 0; font-size: 22px; }
+.fc-actions { display: flex; gap: 8px; }
+.fc-actions .btn-feed { flex: 1; }
+.fc-actions .love-small { flex: none; width: auto; padding: 0 12px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.awards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.award { display: flex; gap: 8px; align-items: center; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
+.award-icon { font-size: 24px; }
+.award-title { font-size: 12px; color: var(--ink-dim); }
+.award-who { font-weight: 700; font-size: 14px; }
+.muted { color: var(--ink-dim); font-weight: 400; }
+.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.board th, .board td { padding: 6px 4px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+.board th:first-child, .board td:first-child { text-align: left; }
+.board th { font-size: 12px; color: var(--ink-dim); font-weight: 600; }
+.hof { margin: 4px 0 0; font-size: 15px; }

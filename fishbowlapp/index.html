@@ -60,6 +60,7 @@
     <header class="topbar">
       <div class="room">Bowl <b id="roomCode"></b></div>
       <div class="top-actions">
+        <button id="boardBtn" class="chip icon" aria-label="Blame board">🏆</button>
         <button id="shareBtn" class="chip">Share</button>
         <button id="menuBtn" class="chip icon" aria-label="Menu">⋯</button>
       </div>
@@ -78,7 +79,10 @@
       <div class="meter"><div id="fcBar" class="meter-fill"></div></div>
       <div class="fc-row"><span id="fcPct"></span><span id="fcMood"></span></div>
       <div id="fcWarn" class="fc-warn" hidden></div>
-      <button id="fcFeed" class="btn btn-feed small">Feed this fish</button>
+      <div class="fc-actions">
+        <button id="fcFeed" class="btn btn-feed small">Feed this fish</button>
+        <button id="fcLove" class="btn small love-small" aria-label="Send love to this fish">❤️</button>
+      </div>
     </div>
 
     <footer class="controls">
@@ -87,6 +91,7 @@
       <div class="buttons">
         <button id="addBtn" class="btn">Add fish</button>
         <button id="feedBtn" class="btn btn-feed"><span id="feedWarn" hidden>⚠️</span>Feed all</button>
+        <button id="loveBtn" class="btn btn-love" aria-label="Send love to everyone">❤️</button>
       </div>
     </footer>
   </section>
