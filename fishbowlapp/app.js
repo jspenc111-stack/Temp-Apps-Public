@@ -3,6 +3,7 @@
 // loaded on demand so the app still opens offline and in ?demo mode.
 
 import * as R from './fish-rules.js';
+import * as Art from './fish-art.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('scene');
@@ -409,9 +410,17 @@ function drawLightRays(t) {
 
 let ripples = [];
 let particles = [];
+let droplets = [];      // splash drops flying above the water
 function updateEffects(dt) {
   for (const r of ripples) r.age += dt;
   ripples = ripples.filter((r) => r.age < r.life);
+  for (const d of droplets) {
+    d.age += dt;
+    d.vy += 2.4 * dt;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+  }
+  droplets = droplets.filter((d) => d.age < 1.5 && !(d.vy > 0 && d.y > BOWL.WATER_Y));
   for (const p of particles) {
     p.age += dt;
     p.x += p.vx * dt;
@@ -422,11 +431,14 @@ function updateEffects(dt) {
   }
   particles = particles.filter((p) => p.age < p.life && p.y > BOWL.WATER_Y);
 }
-function drawRipples() {
+// Surface rings are drawn on the water's surface (outside the underwater
+// view); everything else is drawn underwater.
+function drawRipples(surface) {
   for (const r of ripples) {
+    if (!!r.surface !== surface || r.age < 0) continue;
     const k = r.age / r.life;
     const [px, py] = toPx(r.x, r.y);
-    const rad = (r.size + k * (r.surface ? 0.05 : 0.35)) * G.R;
+    const rad = (r.size + k * (r.surface ? r.grow || 0.05 : 0.35)) * G.R;
     ctx.save();
     ctx.translate(px, py);
     if (r.surface) ctx.scale(1, 0.3);
@@ -660,20 +672,7 @@ function drawAirstone() {
 }
 
 
-// ---------------------------------------------------------------------------
-// Fish colors (keys match R.COLORS)
-// ---------------------------------------------------------------------------
-const PALETTES = {
-  orange: { top: '#c2410c', mid: '#ff8a2a', belly: '#ffe0b8', fin: '#ff9f43' },
-  gold:   { top: '#b7791f', mid: '#f6c343', belly: '#fff3c4', fin: '#ffd66b' },
-  silver: { top: '#5b6b7a', mid: '#b8c4cf', belly: '#f4f7fa', fin: '#d6dee6' },
-  red:    { top: '#9b1c1c', mid: '#e53e3e', belly: '#ffd1d1', fin: '#ff6b6b' },
-  calico: { top: '#1f2937', mid: '#f97316', belly: '#fff7ed', fin: '#fdba74' },
-  blue:   { top: '#1e3a8a', mid: '#3b82f6', belly: '#dbeafe', fin: '#93c5fd' },
-  pearl:  { top: '#a8a29e', mid: '#f5f0e8', belly: '#ffffff', fin: '#fde2cf' },
-  lemon:  { top: '#a16207', mid: '#facc15', belly: '#fefce8', fin: '#fde047' }
-};
-const paletteOf = (color) => PALETTES[color] || PALETTES.orange;
+const paletteOf = Art.paletteOf;
 
 // Blend a color toward grey (hungry fish fade).
 function greyed(hex, t) {
@@ -684,18 +683,13 @@ function greyed(hex, t) {
   return `rgb(${m(r)},${m(g)},${m(b)})`;
 }
 
-// Girth: 0.8× when empty, 1.0× at 50, 1.5× when full.
-function girthFor(f) {
-  const v = clamp(f, 0, 100);
-  return v <= 50 ? 0.8 + 0.2 * (v / 50) : 1 + 0.5 * ((v - 50) / 50);
-}
-
 // Same size for a fish on every phone, derived from its id.
-function sizeFor(id) {
+function hashId(id) {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return 0.9 + (h % 1000) / 1000 * 0.2;
+  return h;
 }
+const sizeFor = (id) => 0.9 + (hashId(id) % 1000) / 1000 * 0.2;
 
 // ---------------------------------------------------------------------------
 // Local fish animation. Positions are never synced; each phone animates its
@@ -708,10 +702,19 @@ const BODY = 0.2;        // body length in bowl radii (before sizeFor)
 const fishLenN = (s) => BODY * s.size;
 const fishLenPx = (s) => fishLenN(s) * G.R;
 
-function emptiestPoint() {
+// New fish plop in from above: only for fish added in the last 10 seconds,
+// so reopening the app doesn't replay old arrivals.
+const PLOP_MS = 1500;
+const PLOP_RECENT_MS = 10000;
+const PLOP_FALL_MS = 380;
+const PLOP_START_Y = BOWL.OPEN_Y - 0.3;
+const isPlopping = (sim, perf) => perf - sim.plopAt < PLOP_MS;
+
+function emptiestPoint(underOpening = false) {
   let best = randomSwimPoint(), bestScore = -1;
   for (let i = 0; i < 40; i++) {
     const [x, y] = randomSwimPoint();
+    if (underOpening && Math.abs(x) > 0.45) continue;
     let score = Infinity;
     for (const s of sims.values()) if (s.state === 'alive') score = Math.min(score, Math.hypot(s.x - x, s.y - y));
     if (score > bestScore) { bestScore = score; best = [x, y]; }
@@ -724,11 +727,13 @@ function emptiestPoint() {
 const BANDS = [[BOWL.WATER_Y + 0.14, -0.22], [-0.22, 0.18], [0.18, BOWL.GRAVEL_Y - 0.12]];
 function pickDestination(sim) {
   let best = null, bestScore = -1;
+  const bottomDweller = sim.art && sim.art.swim.bottom;
   for (let i = 0; i < 8; i++) {
-    const [y0, y1] = BANDS[Math.floor(Math.random() * BANDS.length)];
+    const [y0, y1] = bottomDweller ? [BOWL.GRAVEL_Y - 0.2, BOWL.GRAVEL_Y - 0.14] : BANDS[Math.floor(Math.random() * BANDS.length)];
     const y = rand(y0, y1);
     const hw = Math.sqrt(Math.max(0, BOWL.SWIM_R ** 2 - y * y)) * 0.9;
-    const x = rand(-hw, hw);
+    // A bottom dweller also likes to hang around near the glass.
+    const x = bottomDweller && Math.random() < 0.5 ? Math.sign(rand(-1, 1)) * rand(hw * 0.7, hw) : rand(-hw, hw);
     if (!inSwimZone(x, y, 0.03)) continue;
     let score = Math.hypot(x - sim.x, y - sim.y) * 0.3;
     let nearest = Infinity;
@@ -743,21 +748,71 @@ function pickDestination(sim) {
 }
 
 function makeSim(id, data, now, spawned) {
-  const [x, y] = spawned ? emptiestPoint() : randomSwimPoint();
+  const art = Art.artOf(R.typeOf(data));
+  const plop = spawned && now - data.addedAt < PLOP_RECENT_MS;
+  const [x, y] = spawned ? emptiestPoint(plop) : randomSwimPoint();
+  const full = clamp(R.currentFullness(data, now), 0, 100);
+  const perf = performance.now();
   const sim = {
-    id, data, x, y,
+    id, data, art, x, y,
     vx: rand(-0.05, 0.05), vy: 0, tx: x, ty: y, retarget: 0,
     face: Math.random() < 0.5 ? -1 : 1, tilt: 0,
     tail: rand(0, 10), fin: rand(0, 10), phase: rand(0, 10),
-    size: sizeFor(id),
-    girth: girthFor(R.currentFullness(data, now)),
-    chompAt: -1e9,
+    seed: hashId(id),
+    size: sizeFor(id) * art.size,
+    fshow: full, fvel: 0,          // shown fullness, springs toward the real one
+    chompAt: -1e9, burst: 0,
     puffAt: -1e9, pauseUntil: 0, scared: 0,
     state: 'alive', deathAt: 0, deathY: 0, cause: null,
-    bornAt: spawned ? performance.now() : -1e9
+    bornAt: spawned && !plop ? perf : -1e9,
+    plopAt: plop ? perf : -1e9, plopX: x, plopY: y, splashed: false
   };
-  [sim.tx, sim.ty] = pickDestination(sim);
+  if (plop) {
+    // Drop in over the emptiest spot, then swim on from there.
+    sim.x = sim.plopX = clamp(x, -0.45, 0.45);
+    sim.plopY = clamp(y, BOWL.WATER_Y + 0.2, BOWL.WATER_Y + 0.45);
+    sim.y = PLOP_START_Y;
+    sim.tx = x; sim.ty = y;
+  } else {
+    [sim.tx, sim.ty] = pickDestination(sim);
+  }
   return sim;
+}
+
+// The plop: fall, splash, sink with bubbles, a little shake, then swim.
+function updatePlop(sim, dt, perf) {
+  const t = perf - sim.plopAt;
+  if (t < PLOP_FALL_MS) {
+    const k = t / PLOP_FALL_MS;
+    sim.y = lerp(PLOP_START_Y, BOWL.WATER_Y, k * k);
+    sim.tilt = 1.25;
+  } else {
+    if (!sim.splashed) { sim.splashed = true; splash(sim.x); }
+    const k = clamp((t - PLOP_FALL_MS) / 520, 0, 1);
+    sim.y = lerp(BOWL.WATER_Y, sim.plopY, 1 - (1 - k) ** 3);
+    if (t < 900) {
+      sim.tilt = lerp(1.25, 0.25, k);
+      if (Math.random() < dt * 25) {
+        particles.push({ kind: 'bubble', x: sim.x + rand(-0.03, 0.03), y: sim.y - 0.03, vx: rand(-0.05, 0.05), vy: rand(-0.3, -0.1), r: rand(0.005, 0.012), rot: 0, vr: 0, age: 0, life: rand(0.5, 1), buoyant: true });
+      }
+    } else {
+      const w = (t - 900) / (PLOP_MS - 900);
+      sim.tilt = Math.sin(w * Math.PI * 7) * 0.35 * (1 - w);   // shake it off
+      sim.tail += dt * 30;
+    }
+  }
+  sim.vx = 0; sim.vy = 0;
+  sim.fin += dt * 6;
+}
+
+// Splash where a fish hits the water: droplets and ripple rings.
+function splash(x) {
+  for (let i = 0; i < 14; i++) {
+    const a = rand(-Math.PI * 0.85, -Math.PI * 0.15);
+    const sp = rand(0.35, 0.8);
+    droplets.push({ x: x + rand(-0.03, 0.03), y: BOWL.WATER_Y, vx: Math.cos(a) * sp * 0.6, vy: Math.sin(a) * sp, r: rand(0.006, 0.013), age: 0 });
+  }
+  for (let i = 0; i < 3; i++) ripples.push({ x, y: BOWL.WATER_Y, age: -i * 0.18, life: 0.9, size: 0.03, grow: 0.35, surface: true });
 }
 
 // Fish always show the latest fullness straight away (and animate toward it).
@@ -834,6 +889,14 @@ function startle(sim, x, y, radius) {
 }
 
 function updateSim(sim, dt, now, perf) {
+  // Shown fullness springs toward the real one (~0.6 s, slight wobble at the end).
+  const target = shownFullness(sim, now);
+  for (let n = 0, steps = Math.ceil(dt / 0.02); n < steps; n++) {
+    const h = dt / steps;
+    sim.fvel += (90 * (target - sim.fshow) - 11 * sim.fvel) * h;
+    sim.fshow += sim.fvel * h;
+  }
+  if (isPlopping(sim, perf) && sim.state === 'alive') { updatePlop(sim, dt, perf); return; }
   if (isPopping(sim)) {
     sim.x += Math.sin(perf / 30) * 0.02 * dt;
     if (perf - sim.deathAt > POP_MS) {
@@ -852,26 +915,30 @@ function updateSim(sim, dt, now, perf) {
     return;
   }
 
-  const full = shownFullness(sim, now);
+  const swim = sim.art.swim;
+  const full = target;
   const stuffed = full >= 90;
   const hungry = full < 20;
-  let speed = 0.15 * (stuffed ? 0.45 : 1);
+  let speed = 0.15 * swim.speed * (stuffed ? 0.45 : 1);
   let tx = sim.tx, ty = sim.ty;
 
   const meal = meals.find((m) => m.fishId === sim.id);
   if (meal) {
     tx = meal.x;
     ty = clamp(meal.y, BOWL.WATER_Y + 0.1, BOWL.GRAVEL_Y - 0.08);
-    speed = stuffed ? 0.2 : 0.38;
+    speed = (stuffed ? 0.2 : 0.38) * Math.max(0.7, swim.speed);
     if (Math.hypot(sim.x - meal.x, sim.y - meal.y) < 0.07 || perf - meal.born > 3500) eatMeal(sim, meal);
   } else {
     sim.retarget -= dt;
     if (sim.retarget <= 0 || Math.hypot(sim.x - tx, sim.y - ty) < 0.06) {
       [sim.tx, sim.ty] = pickDestination(sim);
-      sim.retarget = hungry ? rand(1.5, 3) : rand(4, 9);
+      sim.retarget = hungry ? rand(1.5, 3) : rand(4, 9) * (swim.dart ? 0.5 : 1) * (swim.calm ? 1.4 : 1);
     }
   }
   if (sim.scared > 0) { sim.scared -= dt; speed *= 2; }
+  // Quick little darts (guppies, tetras, danios).
+  if (swim.dart && sim.burst <= 0 && !stuffed && Math.random() < swim.dart * dt) sim.burst = 0.35;
+  if (sim.burst > 0) { sim.burst -= dt; speed *= 2.3; }
 
   let dx = tx - sim.x, dy = ty - sim.y;
   const d = Math.hypot(dx, dy) || 1;
@@ -907,11 +974,12 @@ function updateSim(sim, dt, now, perf) {
     desVy -= (sim.y / r) * 0.3 * k;
   }
   if (sim.y < BOWL.WATER_Y + 0.16) desVy += 0.25 * (BOWL.WATER_Y + 0.16 - sim.y) / 0.08;
-  if (sim.y > BOWL.GRAVEL_Y - 0.14) desVy -= 0.25 * (sim.y - (BOWL.GRAVEL_Y - 0.14)) / 0.08;
+  const floorY = swim.bottom ? BOWL.GRAVEL_Y - 0.08 : BOWL.GRAVEL_Y - 0.14;
+  if (sim.y > floorY) desVy -= 0.25 * (sim.y - floorY) / 0.08;
 
   if (perf < sim.pauseUntil) { desVx = 0; desVy = 0; }
 
-  const turn = sim.scared > 0 ? 1.2 : perf < sim.pauseUntil ? 5 : 2;
+  const turn = sim.scared > 0 ? 1.2 : perf < sim.pauseUntil ? 5 : 2 * (swim.turn || 1);
   sim.vx = lerp(sim.vx, desVx, clamp(dt * turn, 0, 1));
   sim.vy = lerp(sim.vy, desVy, clamp(dt * turn, 0, 1));
   sim.x += sim.vx * dt;
@@ -921,14 +989,11 @@ function updateSim(sim, dt, now, perf) {
   sim.y = clamp(sim.y, BOWL.WATER_Y + 0.07, BOWL.GRAVEL_Y - 0.05);
 
   if (Math.abs(sim.vx) > 0.015) sim.face = lerp(sim.face, Math.sign(sim.vx), clamp(dt * 4, 0, 1));
-  const targetTilt = clamp(Math.atan2(sim.vy, Math.abs(sim.vx) + 0.05), -0.45, 0.45);
+  const targetTilt = clamp(Math.atan2(sim.vy, Math.abs(sim.vx) + 0.05), -0.45, 0.45) * (swim.bottom ? 0.4 : 1);
   sim.tilt = lerp(sim.tilt, targetTilt, clamp(dt * 4, 0, 1));
   const spd = Math.hypot(sim.vx, sim.vy);
-  sim.tail += dt * (4 + spd * 35);
+  sim.tail += dt * (4 + spd * (swim.calm ? 22 : 35));
   sim.fin += dt * (3 + spd * 12);
-
-  // Girth follows fullness smoothly (~0.5 s).
-  sim.girth = lerp(sim.girth, girthFor(full), 1 - Math.exp(-dt * 7));
 }
 
 function updateMeals(dt, perf) {
@@ -955,189 +1020,75 @@ function drawMeals(perf) {
 }
 
 function drawFish(sim, now, perf) {
-  const pal = paletteOf(sim.data.color);
-  const [px, py] = toPx(sim.x, sim.y);
-  let L = fishLenPx(sim);
+  const art = sim.art;
+  const t = perf / 1000;
+  const [px, py0] = toPx(sim.x, sim.y);
+  const L = fishLenPx(sim);
   const full = shownFullness(sim, now);
   let alpha = clamp((perf - sim.bornAt) / 600, 0, 1);
-  let paleT = 0, roll = 1, swell = 0, wobble = 0;
-  let greyT = sim.state === 'alive' ? clamp((20 - full) / 20, 0, 1) * 0.75 : 0;
+  let paleT = 0, roll = 1, swell = 0, stretch = 1, wobble = 0;
+  const greyT = sim.state === 'alive' ? clamp((20 - full) / 20, 0, 1) * 0.75 : 0;
   const popping = isPopping(sim);
 
   if (popping) {
     const k = clamp((perf - sim.deathAt) / POP_MS, 0, 1);
     swell = k * k * 1.6;
-    L *= 1 + k * 0.25;
+    stretch = 1 + k * 0.25;
     wobble = Math.sin(perf / 25) * 0.08 * k;
   } else if (sim.state === 'dying') {
-    const t = perf - sim.deathAt;
-    paleT = clamp(t / 800, 0, 1);
-    roll = Math.cos(clamp(t / 700, 0, 1) * Math.PI); // 1 → -1: rolls belly-up
-    alpha = 1 - clamp((t - 2000) / 1000, 0, 1);
+    const dt = perf - sim.deathAt;
+    paleT = clamp(dt / 800, 0, 1);
+    roll = Math.cos(clamp(dt / 700, 0, 1) * Math.PI); // 1 → -1: rolls belly-up
+    alpha = 1 - clamp((dt - 2000) / 1000, 0, 1);
+  } else if (!isPlopping(sim, perf)) {
+    if (art.swim.wobble) wobble = Math.sin(t * 2.2 + sim.phase) * art.swim.wobble;
   }
+  const bob = art.swim.bob && sim.state === 'alive' ? Math.sin(t * 2.6 + sim.phase) * G.R * 0.012 : 0;
 
-  // Quick "gulp" puff: ~10% bigger, then settle.
-  const pk = (perf - sim.puffAt) / 380;
-  const puff = pk >= 0 && pk <= 1 ? 1 + 0.1 * Math.sin(Math.PI * pk) : 1;
-  const g = sim.girth * puff + swell;
-  const Ht = L * 0.27 * (1 + (g - 1) * 0.55);             // back
-  const Hb = L * 0.27 * g * (g > 1 ? 1 + (g - 1) * 0.35 : 1); // belly bulges more
+  const puff = Art.gulpAt(perf - sim.puffAt);
+  const girth = Art.girthFor(sim.fshow) * puff + swell;
+  const lenScale = Art.lengthFor(sim.fshow) * (1 + (puff - 1) * 0.3) * stretch;
   const col = (c) => (paleT > 0 ? pale(c, paleT) : greyed(c, greyT));
   const flick = sim.state === 'alive' ? Math.sin(sim.tail) * L * 0.07 : popping ? Math.sin(perf / 30) * L * 0.1 : 0;
 
   ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(px, py);
+  ctx.translate(px, py0 + bob);
   ctx.rotate(sim.tilt * Math.sign(sim.face) + wobble);
 
   // Soft glow when selected
   if (sim.id === selectedId && sim.state === 'alive') {
-    const glow = ctx.createRadialGradient(0, 0, L * 0.2, 0, 0, L * 0.95);
+    const glow = ctx.createRadialGradient(0, 0, L * 0.2, 0, 0, L * 1.1);
     glow.addColorStop(0, 'rgba(255, 244, 200, 0.45)');
     glow.addColorStop(1, 'rgba(255, 244, 200, 0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(0, 0, L * 0.95, 0, Math.PI * 2);
+    ctx.arc(0, 0, L * 1.1, 0, Math.PI * 2);
     ctx.fill();
   }
 
   ctx.scale(sim.face, roll);
-
-  // Tail fin (not scaled by girth)
-  const tailBase = -L * 0.3;
-  ctx.beginPath();
-  ctx.moveTo(tailBase + L * 0.03, 0);
-  ctx.quadraticCurveTo(tailBase - L * 0.14, -L * 0.04 + flick * 0.5, tailBase - L * 0.32, -L * 0.22 + flick);
-  ctx.quadraticCurveTo(tailBase - L * 0.22, flick * 0.8, tailBase - L * 0.32, L * 0.22 + flick);
-  ctx.quadraticCurveTo(tailBase - L * 0.14, L * 0.04 + flick * 0.5, tailBase + L * 0.03, 0);
-  const tg = ctx.createLinearGradient(tailBase, 0, tailBase - L * 0.32, 0);
-  tg.addColorStop(0, col(pal.mid));
-  tg.addColorStop(1, col(pal.fin));
-  ctx.fillStyle = tg;
-  ctx.globalAlpha = alpha * 0.92;
-  ctx.fill();
-  ctx.globalAlpha = alpha;
-  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-  ctx.lineWidth = 0.8;
-  for (let i = -2; i <= 2; i++) {
-    ctx.beginPath();
-    ctx.moveTo(tailBase, 0);
-    ctx.lineTo(tailBase - L * 0.28, i * L * 0.07 + flick * 0.9);
-    ctx.stroke();
-  }
-
-  // Dorsal fin
-  const finWave = Math.sin(sim.fin) * L * 0.015;
-  ctx.beginPath();
-  ctx.moveTo(-L * 0.12, -Ht * 0.82);
-  ctx.quadraticCurveTo(-L * 0.02 + finWave, -Ht * 1.1 - L * 0.12, L * 0.14, -Ht * 0.9);
-  ctx.closePath();
-  ctx.fillStyle = col(pal.fin);
-  ctx.globalAlpha = alpha * 0.9;
-  ctx.fill();
-  ctx.globalAlpha = alpha;
-
-  // Body: height and belly curve follow girth
-  ctx.beginPath();
-  ctx.moveTo(L * 0.5, L * 0.01);
-  ctx.bezierCurveTo(L * 0.46, -Ht * 0.9, L * 0.05, -Ht * 1.08, -L * 0.28, -Ht * 0.3);
-  ctx.quadraticCurveTo(-L * 0.34, 0, -L * 0.28, Hb * 0.28);
-  ctx.bezierCurveTo(-L * 0.02, Hb * 1.12, L * 0.44, Hb * 0.95, L * 0.5, L * 0.01);
-  ctx.closePath();
-  const bg = ctx.createLinearGradient(0, -Ht, 0, Hb);
-  bg.addColorStop(0, col(pal.top));
-  bg.addColorStop(0.45, col(pal.mid));
-  bg.addColorStop(1, col(pal.belly));
-  ctx.fillStyle = bg;
-  ctx.fill();
-
-  if (sim.data.color === 'calico' && paleT < 1) {
-    ctx.save();
-    ctx.clip();
-    ctx.globalAlpha = alpha * 0.75;
-    ctx.fillStyle = col('#1f2937');
-    ctx.beginPath(); ctx.ellipse(-L * 0.05, -Ht * 0.35, L * 0.08, Ht * 0.3, 0.3, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(L * 0.2, Hb * 0.1, L * 0.05, Hb * 0.2, -0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = col('#ffffff');
-    ctx.beginPath(); ctx.ellipse(-L * 0.18, Hb * 0.2, L * 0.07, Hb * 0.25, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  // Sheen along the back
-  ctx.beginPath();
-  ctx.moveTo(L * 0.38, -Ht * 0.45);
-  ctx.quadraticCurveTo(L * 0.05, -Ht * 0.9, -L * 0.2, -Ht * 0.35);
-  ctx.strokeStyle = `rgba(255,255,255,${0.35 * (1 - paleT * 0.5) * (1 - greyT * 0.5)})`;
-  ctx.lineWidth = Math.max(1, L * 0.025);
-  ctx.lineCap = 'round';
-  ctx.stroke();
-
-  // Stuffed: a stretched-belly highlight
-  if (g > 1.35 && sim.state === 'alive') {
-    ctx.beginPath();
-    ctx.ellipse(L * 0.08, Hb * 0.55, L * 0.16, Hb * 0.22, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.fill();
-  }
-
-  // Gill line
-  ctx.beginPath();
-  ctx.arc(L * 0.36, 0, Math.min(Ht, Hb) * 0.55, Math.PI * 0.7, Math.PI * 1.3);
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-  ctx.lineWidth = Math.max(0.8, L * 0.012);
-  ctx.stroke();
-
-  // Pectoral fin
-  ctx.save();
-  ctx.translate(L * 0.14, Hb * 0.3);
-  ctx.rotate(0.5 + Math.sin(sim.fin * 1.3) * 0.35);
-  ctx.beginPath();
-  ctx.ellipse(-L * 0.06, 0, L * 0.09, L * 0.035, 0, 0, Math.PI * 2);
-  ctx.fillStyle = col(pal.fin);
-  ctx.globalAlpha = alpha * 0.85;
-  ctx.fill();
-  ctx.restore();
-  ctx.globalAlpha = alpha;
-
-  // Eye (fixed size)
-  const ex = L * 0.32, ey = -L * 0.27 * 0.2;
-  const er = Math.max(2, L * 0.055);
-  ctx.beginPath();
-  ctx.arc(ex, ey, er, 0, Math.PI * 2);
-  ctx.fillStyle = '#fbfbf7';
-  ctx.fill();
-  if (sim.state === 'dying' && !popping) {
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = Math.max(1, er * 0.35);
-    ctx.beginPath();
-    ctx.moveTo(ex - er * 0.55, ey - er * 0.55); ctx.lineTo(ex + er * 0.55, ey + er * 0.55);
-    ctx.moveTo(ex + er * 0.55, ey - er * 0.55); ctx.lineTo(ex - er * 0.55, ey + er * 0.55);
-    ctx.stroke();
-  } else {
-    ctx.beginPath();
-    ctx.arc(ex + er * 0.15, ey, er * (sim.scared > 0 || popping ? 0.35 : 0.58), 0, Math.PI * 2);
-    ctx.fillStyle = '#111';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(ex + er * 0.3, ey - er * 0.3, er * 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-  }
-
-  // Mouth
-  ctx.beginPath();
-  const chomping = puff > 1.02 || perf - sim.chompAt < 250;
-  ctx.arc(L * 0.48, L * 0.03, L * 0.025 * (chomping ? 1.8 : 1), -0.4, 0.9);
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = Math.max(0.8, L * 0.012);
-  ctx.stroke();
-
+  Art.drawFish(ctx, {
+    type: R.typeOf(sim.data), color: sim.data.color, seed: sim.seed,
+    L, girth, lenScale, flick, fin: sim.fin, t, col, alpha,
+    eye: sim.state === 'dying' && !popping ? 'x' : popping || sim.scared > 0 ? 'shock' : 'normal',
+    mouthOpen: puff > 1.03 || perf - sim.chompAt < 250
+  });
   ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
 // Frame
 // ---------------------------------------------------------------------------
+function drawDroplets() {
+  ctx.fillStyle = 'rgba(210, 245, 250, 0.85)';
+  for (const d of droplets) {
+    const [px, py] = toPx(d.x, d.y);
+    ctx.beginPath();
+    ctx.arc(px, py, Math.max(1, d.r * G.R), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function render(now, perf) {
   const t = perf / 1000;
   ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
@@ -1154,14 +1105,26 @@ function render(now, perf) {
   drawPlants(t, 0);
   drawMeals(perf);
   const order = [...sims.values()].sort((a, b) => (a.state !== 'alive') - (b.state !== 'alive') || (a.id === selectedId) - (b.id === selectedId));
-  for (const s of order) drawFish(s, now, perf);
+  const inAir = (s) => s.y < BOWL.WATER_Y;
+  for (const s of order) if (!inAir(s)) drawFish(s, now, perf);
   drawPlants(t, 1);
   drawBubbles();
   drawParticles();
-  drawRipples();
+  drawRipples(false);
   ctx.restore();
 
   drawSurface(t);
+  // Ripple rings on the surface, kept inside the water's surface.
+  const [sx, sy] = toPx(0, BOWL.WATER_Y);
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, halfWidthAt(BOWL.WATER_Y) * G.R, G.R * 0.06, 0, 0, Math.PI * 2);
+  ctx.clip();
+  drawRipples(true);
+  ctx.restore();
+  // A new fish still falling in from above the water.
+  for (const s of order) if (inAir(s)) drawFish(s, now, perf);
+  drawDroplets();
   drawGlass();
 }
 
@@ -1276,16 +1239,14 @@ function applyRoom(next) {
       sim = makeSim(id, data, now, true);
       sims.set(id, sim);
       if (now - data.addedAt < 60000) {
-        toast(DEBUG && data.addedBy !== nickname ? `⏱ ${data.name}: here ${now - data.addedAt} ms after the tap` : `${data.name} joined the bowl!`);
-        for (let i = 0; i < 8; i++) {
-          particles.push({ kind: 'bubble', x: sim.x + rand(-0.05, 0.05), y: sim.y + rand(0, 0.06), vx: rand(-0.1, 0.1), vy: rand(-0.2, 0), r: rand(0.006, 0.013), rot: 0, vr: 0, age: 0, life: rand(0.6, 1.2), buoyant: true });
-        }
+        toast(DEBUG && data.addedBy !== nickname ? `⏱ ${data.name}: here ${now - data.addedAt} ms after the tap` : `${data.name} the ${R.typeLabel(data)} joined the bowl!`);
       } else {
         sim.bornAt = -1e9;
       }
       continue;
     }
     sim.data = data;
+    sim.art = Art.artOf(R.typeOf(data));
     if (sim.state === 'alive' && data.diedAt != null) {
       const cause = data.cause || 'starved';
       startDeath(sim, cause, now - data.diedAt < 60000);
@@ -1521,7 +1482,7 @@ function select(sim) {
   lastTouch = performance.now();
   sim.pauseUntil = lastTouch + 1200;
   $('fcSwatch').style.background = `linear-gradient(180deg, ${paletteOf(sim.data.color).top}, ${paletteOf(sim.data.color).mid} 50%, ${paletteOf(sim.data.color).belly})`;
-  $('fcName').textContent = `${sim.data.name} · ${sim.data.color}`;
+  $('fcName').textContent = `${sim.data.name} · ${R.typeLabel(sim.data)}`;
   $('fishCard').hidden = false;
   cardValuesAt = 0;
   updateCard(Date.now(), lastTouch);
@@ -1638,11 +1599,11 @@ function toast(msg) {
 function startDemo() {
   const now = Date.now();
   const ids = ['demoa1', 'demob2', 'democ3', 'demod4', 'demoe5'];
-  const spec = [['Pickle', 'gold', 94], ['Captain', 'orange', 70], ['Mochi', 'calico', 50], ['Biscuit', 'silver', 32], ['Noodle', 'red', 12]];
+  const spec = [['Pickle', 'betta', 'royal', 94], ['Captain', 'goldfish', 'orange', 70], ['Mochi', 'angelfish', 'silver', 50], ['Biscuit', 'puffer', 'puffer', 32], ['Noodle', 'guppy', 'sunset', 12]];
   const fish = {};
   ids.forEach((id, i) => {
-    const [name, color, full] = spec[i];
-    fish[id] = { name, color, addedAt: now - (i + 1) * 3600e3, addedBy: ['Sam', 'Priya', 'Alex'][i % 3], fullness: full, fullnessAt: now, diedAt: null, cause: null };
+    const [name, type, color, full] = spec[i];
+    fish[id] = { name, type, color, addedAt: now - (i + 1) * 3600e3, addedBy: ['Sam', 'Priya', 'Alex'][i % 3], fullness: full, fullnessAt: now, diedAt: null, cause: null };
   });
   const demoRoom = {
     lastFedAt: now - 3 * 60e3, lastFedBy: 'Alex',
@@ -1723,7 +1684,7 @@ canvas.addEventListener('pointerdown', (e) => {
   // Generous tap area: fish move and fingers are big.
   let best = null, bestD = Infinity;
   for (const s of sims.values()) {
-    if (s.state !== 'alive') continue;
+    if (s.state !== 'alive' || isPlopping(s, performance.now())) continue;
     const d = Math.hypot((s.x - x) * G.R, (s.y - y) * G.R);
     if (d < Math.max(44, fishLenPx(s) * 0.9) && d < bestD) { best = s; bestD = d; }
   }

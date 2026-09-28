@@ -7,7 +7,7 @@ rules_version = '2';
 // - You can read ONE bowl if you know its code, but never list the bowls.
 // - Only rooms/{code} exists, and the code must look like a real room code.
 // - A bowl holds at most 10 fish and a feed log of at most 20 entries.
-// - Nicknames and fish names are at most 20 characters.
+// - Nicknames, fish names and fish types are at most 20 characters.
 // - The feed log is append-only: each save may add one new entry at the
 //   front, and older entries can't be changed or erased.
 // - Bowls can't be deleted.
@@ -32,9 +32,10 @@ service cloud.firestore {
       return v is string && v.size() <= 20;
     }
 
+    // Fish saved before types existed have no `type`.
     function fishOk(f) {
-      return f.name is string && f.name.size() > 0 && f.name.size() <= 20
-        && shortText(f.addedBy);
+      return shortText(f.name) && shortText(f.addedBy)
+        && (f.get('type', null) == null || f.type.size() <= 20);
     }
 
     function validFishMap(m) {

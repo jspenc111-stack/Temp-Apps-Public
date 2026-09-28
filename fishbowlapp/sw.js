@@ -1,12 +1,13 @@
 // Service worker: keeps a copy of the app's own files so it opens offline.
 // Bump CACHE whenever app files change, so installed apps pick up the update.
-const CACHE = 'fishbowl-v4';
+const CACHE = 'fishbowl-v5';
 const FILES = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './fish-rules.js',
+  './fish-art.js',
   './bowl.js',
   './firebase-config.js',
   './manifest.webmanifest',
