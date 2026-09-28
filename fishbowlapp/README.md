@@ -46,5 +46,6 @@ Everything in this repo is public. Your nickname is visible to anyone in your bo
 - **Tests:** `node fishbowlapp/tests/run.mjs` (from the repo root). They also scan the repo for email addresses and secret keys.
 - **Preview:** `cd fishbowlapp && python3 -m http.server 8000`, then open http://localhost:8000/?demo
 - **Icons:** `python3 tools/make_icons.py` (needs Pillow: `pip install pillow`).
+- **Measuring the delay between phones:** add `?debug` to the end of the link on two phones (for example `…/fishbowlapp/?debug`). When the other phone feeds or adds a fish, the message shows how many milliseconds it took to arrive. It's only accurate if both phones' clocks are right.
 - After changing app files, bump `CACHE` in `sw.js` (for example `fishbowl-v3` → `fishbowl-v4`) so installed apps pick up the new version.
 - `SPEC.md` describes exactly how the app should behave. Keep it up to date.
