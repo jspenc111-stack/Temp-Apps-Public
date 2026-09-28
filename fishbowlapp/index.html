@@ -2,50 +2,95 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#2a1c14">
-  <meta name="description" content="A virtual fishbowl. Add fish, feed them, don't overdo it.">
+  <meta name="description" content="A fishbowl you share with friends. Add fish, feed them, don't overdo it.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Fishbowl">
   <title>Fishbowl</title>
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <canvas id="scene" aria-label="Fishbowl. Tap a fish to see its details, tap the water to startle the fish."></canvas>
+  <canvas id="scene" aria-label="The fishbowl. Tap a fish to select it."></canvas>
 
-  <header class="hud">
-    <div class="count" id="count" aria-live="polite">0 / 10 fish</div>
-  </header>
+  <!-- First open: create or join -->
+  <section id="welcome" class="welcome" hidden>
+    <div class="welcome-card">
+      <h1>Fishbowl</h1>
+      <p class="lead">A fishbowl you share with friends. Add fish and feed them, but not too much.</p>
 
-  <div class="info" id="info" hidden>
-    <button class="info-close" id="infoClose" aria-label="Close">&times;</button>
-    <div class="info-head">
-      <span class="swatch" id="infoSwatch"></span>
-      <div>
-        <div class="info-name" id="infoName"></div>
-        <div class="info-sub" id="infoSub"></div>
-      </div>
+      <label class="field">
+        <span>What should friends see you as?</span>
+        <input id="nickInput" class="field-input" maxlength="20" autocomplete="nickname" placeholder="Someone">
+        <small>A nickname, not your full name</small>
+      </label>
+
+      <button id="createBtn" class="btn btn-feed">Create a bowl</button>
+
+      <div class="divider"><span>or</span></div>
+
+      <form id="joinForm" class="join" novalidate>
+        <input id="codeInput" class="field-input code-input" placeholder="Room code" aria-label="Room code"
+               autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="12">
+        <button id="joinBtn" class="btn" type="submit">Join a bowl</button>
+      </form>
+
+      <p id="welcomeMsg" class="msg" role="alert"></p>
+      <a class="demo-link" href="?demo">Peek at a demo bowl</a>
     </div>
-    <div class="meter-label"><span>Fullness</span><span id="infoPct"></span></div>
-    <div class="meter"><div class="meter-fill" id="infoBar"></div></div>
-    <div class="info-mood" id="infoMood"></div>
-    <div class="meals" id="infoMeals"></div>
+  </section>
+
+  <!-- The bowl -->
+  <section id="bowlUi" hidden>
+    <header class="topbar">
+      <div class="room">Bowl <b id="roomCode"></b></div>
+      <div class="top-actions">
+        <button id="shareBtn" class="chip">Share</button>
+        <button id="menuBtn" class="chip icon" aria-label="Menu">⋯</button>
+      </div>
+    </header>
+
+    <div class="status">
+      <span id="count" class="chip static" aria-live="polite">0 / 10 fish</span>
+      <span id="offline" class="chip static offline" hidden>Offline</span>
+    </div>
+    <div class="status">
+      <button id="activity" class="activity" aria-label="Show feeding history">Not fed yet</button>
+    </div>
+
+    <div id="fishCard" class="fish-card" hidden>
+      <div class="fc-head"><span id="fcSwatch" class="swatch"></span><span id="fcName"></span></div>
+      <div class="meter"><div id="fcBar" class="meter-fill"></div></div>
+      <div class="fc-row"><span id="fcPct"></span><span id="fcMood"></span></div>
+      <button id="fcFeed" class="btn btn-feed small">Feed this fish</button>
+    </div>
+
+    <footer class="controls">
+      <div id="fullMsg" class="full-msg" hidden>Bowl is full</div>
+      <div class="buttons">
+        <button id="addBtn" class="btn">Add fish</button>
+        <button id="feedBtn" class="btn btn-feed">Feed all</button>
+      </div>
+    </footer>
+  </section>
+
+  <!-- Bottom sheet: feeding history / menu -->
+  <div id="sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-head">
+        <h2 id="sheetTitle"></h2>
+        <button id="sheetClose" class="chip icon" aria-label="Close">×</button>
+      </div>
+      <div id="sheetBody"></div>
+    </div>
   </div>
 
-  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <footer class="controls">
-    <div class="full-msg" id="fullMsg" hidden>Bowl is full.</div>
-    <div class="buttons">
-      <button class="btn" id="addBtn"><span class="btn-icon">🐟</span>Add fish</button>
-      <button class="btn btn-feed" id="feedBtn"><span class="btn-icon">🍤</span>Feed</button>
-    </div>
-  </footer>
-
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

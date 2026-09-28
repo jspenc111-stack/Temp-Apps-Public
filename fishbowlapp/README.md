@@ -1,26 +1,50 @@
 # Fishbowl
 
-A small virtual fishbowl PWA. Add up to 10 fish, feed them, and try not to kill them. Plain HTML/CSS/vanilla JS, no build step, works offline.
+A fishbowl you share with friends. Anyone in the bowl can add fish (up to 10) and feed them. Feed a fish too much and it dies; forget to feed it and it starves. Everyone sees the same bowl, live, so check who fed the fish last before you feed them again.
 
-## Rules
+**Live app:** https://jspenc111-stack.github.io/Temp-Apps-Public/fishbowlapp/
+**Demo (nothing is saved or shared):** https://jspenc111-stack.github.io/Temp-Apps-Public/fishbowlapp/?demo
 
-- Every fish starts at 50 fullness and loses 1 point every 10 seconds, even while the app is closed.
-- **Feed** drops food flakes. Each fish swims to its own flakes and gains +30 when it eats them.
-- Fullness tops out at 100, so feeding a full fish is harmless.
-- **Overfeeding pops them.** A fish swells with every meal it eats. If it eats **more than 10 meals within one minute**, it pops. From 8 meals on it jiggles, says "urp!", and its info card warns you.
-- **Starving:** at 0 fullness a fish turns pale, goes belly-up, floats to the top, and disappears after about 3 seconds.
-- Tap a fish to see its name, age, fullness and meals this minute. Tap the water to startle nearby fish.
+## How to play
 
-All the numbers are in `CFG` at the top of `app.js`.
+- **Create a bowl** and you get a 6-character code, like `K7QM3P`. Tap **Share** to send friends a link that opens your bowl.
+- **Add fish:** up to 10. Each gets a random name, like Pickle or Sir Swims-a-Lot.
+- **Feed all** feeds every fish. To feed just one, tap it and use **Feed this fish**.
+- Each feed adds 5 to a fish's fullness (out of 100). A new fish starts at 50.
+- Fish get hungry slowly: they lose 1 point every 14.4 minutes, even when nobody has the app open. A full fish lasts 24 hours.
+- **Over 100, a fish dies from overeating.** Near full it gets very round and slow. That's your warning.
+- **At 0, a fish starves.** Hungry fish turn grey and swim a bit erratically.
+- The line under the fish count ("Last fed 3 min ago by Sam") shows who fed them last. Tap it to see the last 20 feeds.
+- **Menu (⋯):** change your nickname, or **Leave bowl**. Leaving only forgets the bowl on your phone; it stays there for your friends.
 
-## Files
+## Install it on your phone (Android)
 
-`index.html`, `style.css`, `app.js`, `manifest.json`, `service-worker.js`, `icons/`
+Open the live link in Chrome, tap the menu (⋮), then **Add to Home screen** (or **Install app**). It opens like a normal app, and it still opens without internet. You can't add or feed fish while offline, though.
 
-## Run locally
+## Firebase setup (one time)
 
-```
-npx http-server fishbowlapp
-```
+Firebase is Google's free online database. It stores each bowl so friends see the same fish. Steps 1–5 are already done. **Step 6 has to be done after the pull request that adds this app is merged,** and again any time `firestore.rules` changes.
 
-State is saved in `localStorage` under `fishbowl.v1`.
+1. Go to **console.firebase.google.com** → **Create a project** → name it `fishbowl`. Google Analytics: **off**.
+2. **Add a web app:** on the project home, tap the **`</>`** (Web) icon → nickname `fishbowl` → don't tick Firebase Hosting → **Register app**. Copy the `firebaseConfig` block it shows. (It's in `firebase-config.js`.)
+3. **Turn on Anonymous sign-in:** Build → **Authentication** → **Get started** → **Sign-in method** → **Anonymous** → **Enable** → Save.
+4. **Allow the app's web address:** Authentication → **Settings** → **Authorized domains** → **Add domain** → `jspenc111-stack.github.io`.
+5. **Create the database:** Build → **Firestore Database** → **Create database** → pick a US location (e.g. `nam5`) → **Start in production mode**.
+6. **Paste the rules:** Firestore Database → **Rules** tab → delete everything there → paste the whole contents of [`firestore.rules`](firestore.rules) → **Publish**.
+7. Stay on the free **Spark** plan. No billing needed.
+
+"Anonymous sign-in" means the app quietly signs each phone in without an account, so the database can turn away anything that isn't the app. The **rules** decide what the app is allowed to do: read one bowl by its code (never a list of all bowls), at most 10 fish, at most 20 feeds in the history, names of 20 characters or fewer, and no deleting bowls.
+
+## Privacy
+
+Everything in this repo is public. Your nickname is visible to anyone in your bowl, so use a nickname, not your full name. Anyone who has a bowl's code can see and change that bowl. The Firebase settings in `firebase-config.js` are public by design; they identify the project but aren't passwords.
+
+## For whoever changes the code
+
+- Plain HTML, CSS and JavaScript. No build step and no npm packages.
+- `fish-rules.js` has the game rules and the numbers to tune (`START_FULLNESS`, `FEED_AMOUNT`, `SECONDS_PER_POINT`, `MAX_FISH`). `bowl.js` talks to Firebase. `app.js` draws the bowl and runs the screens.
+- **Tests:** `node fishbowlapp/tests/run.mjs` (from the repo root). They also scan the repo for email addresses and secret keys.
+- **Preview:** `cd fishbowlapp && python3 -m http.server 8000`, then open http://localhost:8000/?demo
+- **Icons:** `python3 tools/make_icons.py` (needs Pillow: `pip install pillow`).
+- After changing app files, bump `CACHE` in `sw.js` (for example `fishbowl-v3` → `fishbowl-v4`) so installed apps pick up the new version.
+- `SPEC.md` describes exactly how the app should behave. Keep it up to date.
