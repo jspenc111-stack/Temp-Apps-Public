@@ -6,7 +6,7 @@ rules_version = '2';
 // - Only signed-in users (the app signs in anonymously behind the scenes).
 // - You can read ONE bowl if you know its code, but never list the bowls.
 // - Only rooms/{code} exists, and the code must look like a real room code.
-// - A bowl holds at most 10 fish and a feed log of at most 20 entries.
+// - A bowl holds at most 15 fish and a feed log of at most 20 entries.
 // - Nicknames, fish names and fish types are at most 20 characters.
 // - The feed log is append-only: each save may add one new entry at the
 //   front, and older entries can't be changed or erased.
@@ -14,7 +14,7 @@ rules_version = '2';
 //
 // Firestore stops after 1000 checks per request, so the checks are kept
 // small. The rules language has no loops, so fish are checked one position
-// at a time (0–9). Thanks to the append-only log, only the newest log entry
+// at a time (0–14). Thanks to the append-only log, only the newest log entry
 // needs checking; older ones were checked when they were added.
 
 service cloud.firestore {
@@ -32,20 +32,21 @@ service cloud.firestore {
       return v is string && v.size() <= 20;
     }
 
-    // Fish saved before types existed have no `type`.
+    // Kept as cheap as possible: a full bowl has 15 fish to check. Fish saved
+    // before types existed have no `type`.
     function fishOk(f) {
-      return shortText(f.name) && shortText(f.addedBy)
-        && (f.get('type', null) == null || f.type.size() <= 20);
+      return f.name.size() <= 20 && f.addedBy.size() <= 20 && f.get('type', '').size() <= 20;
     }
 
     function validFishMap(m) {
       let v = m.values();
       let n = v.size();
-      return n <= 10
+      return n <= 15
         && (n < 1 || fishOk(v[0])) && (n < 2 || fishOk(v[1])) && (n < 3 || fishOk(v[2]))
         && (n < 4 || fishOk(v[3])) && (n < 5 || fishOk(v[4])) && (n < 6 || fishOk(v[5]))
         && (n < 7 || fishOk(v[6])) && (n < 8 || fishOk(v[7])) && (n < 9 || fishOk(v[8]))
-        && (n < 10 || fishOk(v[9]));
+        && (n < 10 || fishOk(v[9])) && (n < 11 || fishOk(v[10])) && (n < 12 || fishOk(v[11]))
+        && (n < 13 || fishOk(v[12])) && (n < 14 || fishOk(v[13])) && (n < 15 || fishOk(v[14]));
     }
 
     function logEntryOk(e) {

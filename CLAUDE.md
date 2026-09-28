@@ -2,7 +2,7 @@
 
 This repo holds several small apps, each in its own folder: `fishbowlapp/` (Fishbowl), `Counter/` (Tally Counter) and `knittingapp/` (Row Tracker). GitHub Pages publishes the whole repo. The rules below are for Fishbowl, but rules 1, 2 and 9 apply to every app here.
 
-A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (max 10), and feed them. Overfeeding or starving kills fish. Static site on GitHub Pages; shared data in Firebase Firestore with Anonymous Auth. **`fishbowlapp/SPEC.md` is the source of truth for behavior.**
+A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (max 15), and feed them. Overfeeding or starving kills fish. Static site on GitHub Pages; shared data in Firebase Firestore with Anonymous Auth. **`fishbowlapp/SPEC.md` is the source of truth for behavior.**
 
 ## About the owner
 - Not a developer. Explain changes in plain language, and define any technical term the first time you use it.
@@ -33,4 +33,4 @@ Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/fishbowlapp/
 7. **Least privilege.** Don't loosen `firestore.rules`, add Firebase products, or add third-party services without explaining why in the PR. Never allow listing all rooms.
 8. **Keep database use small.** Don't sync fish swimming positions or write on a timer; only write when someone adds, feeds, or a death/cleanup is recorded.
 9. **Small PRs.** One feature or fix per PR, with a clear title.
-10. **Firestore rules have a budget.** Firestore stops after 1000 checks per request, so keep per-fish and per-log-entry checks small, and test a completely full bowl (10 fish, 20 log entries, max-length names) against the Firestore emulator after changing `firestore.rules`.
+10. **Firestore rules have a budget.** Firestore stops after 1000 checks per request, so keep per-fish and per-log-entry checks small, and test a completely full bowl (15 fish, 20 log entries, max-length names) against the Firestore emulator after changing `firestore.rules`.

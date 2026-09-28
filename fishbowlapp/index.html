@@ -77,14 +77,16 @@
       <div class="fc-head"><span id="fcSwatch" class="swatch"></span><span id="fcName"></span></div>
       <div class="meter"><div id="fcBar" class="meter-fill"></div></div>
       <div class="fc-row"><span id="fcPct"></span><span id="fcMood"></span></div>
+      <div id="fcWarn" class="fc-warn" hidden></div>
       <button id="fcFeed" class="btn btn-feed small">Feed this fish</button>
     </div>
 
     <footer class="controls">
       <div id="fullMsg" class="full-msg" hidden>Bowl is full</div>
+      <div id="feedHint" class="full-msg feed-hint" hidden></div>
       <div class="buttons">
         <button id="addBtn" class="btn">Add fish</button>
-        <button id="feedBtn" class="btn btn-feed">Feed all</button>
+        <button id="feedBtn" class="btn btn-feed"><span id="feedWarn" hidden>⚠️</span>Feed all</button>
       </div>
     </footer>
   </section>

@@ -367,7 +367,8 @@ function drawPattern(ctx, type, color, pal, g, L, col, rnd) {
 // The whole fish
 // ---------------------------------------------------------------------------
 // o: { type, color, seed, L, girth, lenScale, flick, fin, t, col, alpha,
-//      eye: 'normal' | 'x' | 'shock', mouthOpen, full }
+//      eye: 'normal' | 'x' | 'shock', mouthOpen,
+//      cheeks (stuffed: puffed cheeks), sweat (about to pop), hat (12 hours old) }
 export function drawFish(ctx, o) {
   const art = artOf(o.type);
   const base = paletteOf(o.color);
@@ -551,5 +552,75 @@ export function drawFish(ctx, o) {
     ctx.fill();
   }
 
+  // Stuffed: puffed-out cheeks
+  if (o.cheeks) {
+    ctx.beginPath();
+    ctx.ellipse(g.nose * 0.72, er * 1.8, L * 0.06, L * 0.045, 0, 0, Math.PI * 2);
+    ctx.fillStyle = col(pal.belly);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = Math.max(0.8, L * 0.008);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(g.nose * 0.72, er * 1.8, L * 0.03, L * 0.018, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,120,120,0.35)';
+    ctx.fill();
+  }
+
+  // About to pop: a sweat drop on the forehead
+  if (o.sweat) {
+    const sx = ex - er * 1.2, sy = ey - er * 1.9;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - L * 0.05);
+    ctx.quadraticCurveTo(sx + L * 0.03, sy, sx, sy + L * 0.02);
+    ctx.quadraticCurveTo(sx - L * 0.03, sy, sx, sy - L * 0.05);
+    ctx.fillStyle = 'rgba(170, 225, 255, 0.95)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(40, 110, 170, 0.6)';
+    ctx.lineWidth = Math.max(0.8, L * 0.008);
+    ctx.stroke();
+  }
+
+  // 12 hours old: a party hat, a little tilted, wobbling as the fish swims
+  if (o.hat) drawPartyHat(ctx, g.nose * 0.5, -Math.min(g.Ht, L * 0.5) * 0.92, L, o.seed, o.t);
+
+  ctx.restore();
+}
+
+const HAT_COLORS = [['#ff4f9a', '#ffd23f'], ['#3b82f6', '#ffd23f'], ['#22c55e', '#ff7a1a'], ['#a24ee8', '#62d0ff'], ['#ff5a4e', '#fff']];
+function drawPartyHat(ctx, x, y, L, seed, t) {
+  const [c1, c2] = HAT_COLORS[seed % HAT_COLORS.length];
+  const h = L * 0.3, w = L * 0.17;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.35 + Math.sin(t * 3 + seed) * 0.08);
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, 0);
+  ctx.lineTo(0, -h);
+  ctx.lineTo(w / 2, 0);
+  ctx.closePath();
+  ctx.fillStyle = c1;
+  ctx.fill();
+  // stripes
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = c2;
+  ctx.lineWidth = L * 0.035;
+  for (let i = 1; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(-w, -h * i * 0.28 + w * 0.2);
+    ctx.lineTo(w, -h * i * 0.28 - w * 0.2);
+    ctx.stroke();
+  }
+  ctx.restore();
+  // brim and pom-pom
+  ctx.fillStyle = c2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, w * 0.6, L * 0.02, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, -h, L * 0.04, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
   ctx.restore();
 }
