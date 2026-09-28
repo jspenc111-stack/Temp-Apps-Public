@@ -11,6 +11,7 @@ A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (m
 ## Layout (all in `fishbowlapp/`)
 - `index.html`, `styles.css`, `app.js`: the app (plain HTML/CSS/JS, no build step, no npm packages).
 - `fish-rules.js`: pure game logic with no Firebase imports, so it can be tested in Node.
+- `fish-art.js`: how the 12 fish types look and swim, and how fullness changes their shape (drawing only).
 - `bowl.js`: everything that talks to Firebase.
 - `firebase-config.js`: the public Firebase web config. Don't change it unless the owner gives a new one.
 - `firestore.rules`: database security rules. The owner pastes these into the Firebase console by hand.

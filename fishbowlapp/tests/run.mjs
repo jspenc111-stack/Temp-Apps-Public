@@ -227,13 +227,44 @@ test('the same fish id always gives the same new fish (phone and database agree)
   for (let i = 0; i < 1000; i++) { const v = r(); ok(v >= 0 && v < 1, 'in range'); }
 });
 
-test('about 60 original fish names, all 20 characters or fewer', () => {
-  ok(R.FISH_NAMES.length >= 55 && R.FISH_NAMES.length <= 65, `have ${R.FISH_NAMES.length}`);
+test('at least 200 original fish names, unique, 20 characters or fewer', () => {
+  ok(R.FISH_NAMES.length >= 200, `only ${R.FISH_NAMES.length} names`);
   eq(new Set(R.FISH_NAMES).size, R.FISH_NAMES.length, 'no duplicates');
-  for (const n of R.FISH_NAMES) ok(n.length <= R.TEXT_MAX, `${n} too long`);
-  for (const famous of ['Nemo', 'Dory', 'Marlin', 'Wanda', 'Flounder', 'Cleo', 'Gill', 'Squirt']) {
-    ok(!R.FISH_NAMES.includes(famous), `${famous} is a famous fish`);
+  for (const n of R.FISH_NAMES) ok(n.length > 0 && n.length <= R.TEXT_MAX, `${n} too long`);
+  const famous = ['Nemo', 'Dory', 'Marlin', 'Wanda', 'Flounder', 'Cleo', 'Gill', 'Squirt', 'Coral', 'Pearl', 'Oscar', 'Crush',
+    'Nigel', 'Peach', 'Jacques', 'Deb', 'Gurgle', 'Bloat', 'Sebastian', 'Ponyo', 'Lenny', 'Angie', 'Kipper'];
+  for (const f of famous) ok(!R.FISH_NAMES.includes(f), `${f} is a famous character`);
+});
+
+test('12 fish types, each with at least two colors', () => {
+  eq(R.FISH_TYPES.length, 12);
+  eq(new Set(R.FISH_TYPES.map((t) => t.key)).size, 12, 'unique types');
+  for (const t of R.FISH_TYPES) {
+    ok(t.key.length <= R.TEXT_MAX && t.label.length <= R.TEXT_MAX, `${t.key} too long`);
+    ok(t.colors.length >= 2, `${t.key} needs color variety`);
+    for (const c of t.colors) ok(R.COLORS.includes(c) && c.length <= R.TEXT_MAX, `${c}`);
   }
+});
+
+test('every new fish gets a valid type and a color that type comes in', () => {
+  let room = R.emptyRoom();
+  for (let i = 0; i < 10; i++) {
+    const { room: next, fish } = R.addFish(room, { id: `t${i}`, by: 'Sam', now: T0, rand: R.seededRandom(`t${i}`) });
+    const type = R.FISH_TYPES.find((t) => t.key === fish.type);
+    ok(type, `bad type ${fish.type}`);
+    ok(type.colors.includes(fish.color), `${fish.color} isn't a ${fish.type} color`);
+    room = next;
+  }
+  const types = new Set(Object.values(room.fish).map((f) => f.type));
+  eq(types.size, 10, 'a bowl of 10 fish gets 10 different types');
+});
+
+test('fish saved before types existed count as goldfish', () => {
+  eq(R.typeOf({ name: 'Old', color: 'blue' }), 'goldfish');
+  eq(R.typeOf({ type: 'not-a-type' }), 'goldfish');
+  eq(R.typeOf({ type: 'betta' }), 'betta');
+  eq(R.typeLabel({}), 'goldfish');
+  eq(R.typeLabel({ type: 'tetra' }), 'neon tetra');
 });
 
 test('the feed log keeps only the newest 20 entries, newest first', () => {

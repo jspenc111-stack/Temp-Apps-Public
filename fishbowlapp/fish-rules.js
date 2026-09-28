@@ -24,18 +24,67 @@ export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const ROOM_CODE_LENGTH = 6;
 export const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/;
 
-export const COLORS = ['orange', 'gold', 'silver', 'red', 'calico', 'blue', 'pearl', 'lemon'];
+// Fish types. Each new fish gets one; the colors are the looks that type
+// can come in. Fish saved before types existed have no `type`: they count
+// as goldfish (see typeOf).
+export const FISH_TYPES = [
+  { key: 'goldfish', label: 'goldfish', colors: ['orange', 'gold', 'pearl', 'calico'] },
+  { key: 'fantail', label: 'fantail', colors: ['orange', 'red', 'calico', 'pearl'] },
+  { key: 'comet', label: 'comet', colors: ['orange', 'red', 'sarasa'] },
+  { key: 'betta', label: 'betta', colors: ['royal', 'crimson', 'violet'] },
+  { key: 'guppy', label: 'guppy', colors: ['sunset', 'cobalt', 'candy'] },
+  { key: 'tetra', label: 'neon tetra', colors: ['neon', 'cardinal'] },
+  { key: 'angelfish', label: 'angelfish', colors: ['silver', 'marble', 'goldangel'] },
+  { key: 'danio', label: 'zebra danio', colors: ['zebra', 'goldzebra'] },
+  { key: 'molly', label: 'molly', colors: ['black', 'gold', 'dalmatian'] },
+  { key: 'platy', label: 'platy', colors: ['red', 'lemon', 'bluefire'] },
+  { key: 'puffer', label: 'pufferfish', colors: ['puffer', 'puffgold'] },
+  { key: 'pleco', label: 'pleco', colors: ['pleco', 'plecogold'] }
+];
+export const DEFAULT_TYPE = 'goldfish';
 
-// Original names only: no famous movie or cartoon fish.
+// Every color any fish can have (older fish may use the first eight).
+export const COLORS = [...new Set(['orange', 'gold', 'silver', 'red', 'calico', 'blue', 'pearl', 'lemon', ...FISH_TYPES.flatMap((t) => t.colors)])];
+
+// Original, kind names only: no famous movie or cartoon fish, real people or brands.
 export const FISH_NAMES = [
-  'Bubbles', 'Captain', 'Sprinkles', 'Admiral', 'Pickle', 'Noodle', 'Biscuit', 'Goldie',
-  'Flash', 'Pebble', 'Wiggles', 'Sir Swims-a-Lot', 'Mochi', 'Tofu', 'Waffles', 'Jellybean',
-  'Pip', 'Coral', 'Olive', 'Chompers', 'Kipper', 'Shelly', 'Taco', 'Fishstick',
-  'Puddle', 'Gus', 'Poppy', 'Sunny', 'Mango', 'Ziggy', 'Rocket', 'Blub',
-  'Sushi', 'Nugget', 'Doodle', 'Muffin', 'Peanut', 'Button', 'Zippy', 'Splash',
-  'Tater', 'Nacho', 'Pumpkin', 'Marbles', 'Twinkle', 'Scooter', 'Dumpling', 'Pretzel',
-  'Bean', 'Fizz', 'Gumdrop', 'Ripple', 'Finnegan', 'Barnacle', 'Commodore', 'Professor Fin',
-  'Lady Scales', 'Duke', 'Bloop', 'Captain Crunchy'
+  // Food
+  'Pickle', 'Noodle', 'Biscuit', 'Dumpling', 'Waffle', 'Muffin', 'Tater Tot', 'Jellybean', 'Pretzel',
+  'Meatball', 'Crumpet', 'Nacho', 'Peanut', 'Mochi', 'Tofu', 'Taco', 'Nugget', 'Pumpkin', 'Gumdrop', 'Cupcake',
+  'Pancake', 'Churro', 'Bagel', 'Cookie', 'Brownie', 'Sprinkles', 'Marshmallow', 'Pudding', 'Toffee',
+  'Butterscotch', 'Macaroni', 'Ravioli', 'Gnocchi', 'Wonton', 'Bao', 'Kiwi', 'Mango', 'Papaya', 'Clementine',
+  'Honeydew', 'Cinnamon', 'Nutmeg', 'Pistachio', 'Cashew', 'Popcorn', 'Snickerdoodle', 'Scone', 'Custard',
+  'Fudge', 'Crouton', 'Pierogi', 'Falafel', 'Tamale', 'Fishstick', 'Sushi', 'Flapjack',
+  // Soft and silly
+  'Bubbles', 'Wiggles', 'Squiggles', 'Nibbles', 'Blip', 'Doodle', 'Pebble', 'Button', 'Marble', 'Sprout',
+  'Fizz', 'Bloop', 'Blub', 'Wobble', 'Zippy', 'Puddle', 'Ripple', 'Twinkle', 'Scooter', 'Snoot', 'Boop',
+  'Squish', 'Fluff', 'Glimmer', 'Sparkle', 'Flicker', 'Pip-Squeak', 'Dimple', 'Bean', 'Jiggles', 'Giggles',
+  'Tumble', 'Waddle', 'Pompom', 'Snuggles', 'Zoom', 'Swish', 'Plop', 'Blorp', 'Sploosh', 'Fidget', 'Wibble',
+  'Bumble', 'Doodlebug', 'Flip', 'Flop', 'Squeaky', 'Twiddle', 'Bonbon', 'Noodlebug',
+  // Fancy titles
+  'Sir Swims-a-Lot', 'Admiral Bubbles', 'Duchess Fins', 'Captain Wiggles', 'Lady Glimmer', 'Professor Blub',
+  'Baron Von Splash', 'Admiral', 'Captain', 'Commodore', 'Duke', 'Lady Scales', 'Professor Fin',
+  'Sir Bubbleton', 'Lord Flippington', 'Countess Coral', 'Madame Ripple', 'Dame Shimmer', 'Sir Noodle',
+  'Lady Pebble', 'Duke of Drizzle', 'Baroness Bloop', 'Captain Crumpet', 'Admiral Pickle', 'General Guppy',
+  'Major Minnow', 'Colonel Kelp', 'Sergeant Splash', 'Queen Wiggles', 'King Finley', 'Prince Puddle',
+  'Princess Poppet', 'Doctor Drift', 'Judge Jellybean', 'Mayor Muffin', 'Chef Noodle', 'Sir Scalesworth',
+  'Lady Lagoon', 'Viscount Vortex', 'Earl of Eddies', 'Marquis de Marble', 'Captain Flapjack',
+  'Professor Pebble', 'Archduke Dimple',
+  // Fishy puns
+  'Finnegan', 'Gill-ian', 'Scaley', 'Bubba Gill', 'Splashley', 'Fintastic', 'Reel Deal', 'Wave-y Davey',
+  'Finley', 'Gilbert', 'Gilly', 'Sole Mate', 'Cod Almighty', 'Tunacious', 'Guppy Love', 'Krill Seeker',
+  'Scale-y Sue', 'Finny Penny', 'Bass-ically', 'Troutstanding', 'Carpe Diem', 'Swim Jim', 'Fin Tonic',
+  'Reef Relief', 'Splish Splash', 'Finbar', 'Aqua Marina', 'Shelly Belly', 'Bubblegill', 'Fishful Thinker',
+  'Wishy Fishy', 'Kelp Me', 'Wave Hello', 'Current Events', 'Tide Tickler', 'Fin-derella', 'Gillsworth',
+  'Scalebert', 'Finnick', 'Nautical Nick', 'Algae Rhythm', 'Sir Fins-a-Lot', 'Fintervention', 'Fin-ominal',
+  'Salty Sam', 'Guppy Gus',
+  // Cozy classics
+  'Goldie', 'Sunny', 'Pip', 'Ziggy', 'Coco', 'Poppy', 'Maple', 'Olive', 'Sparky', 'Dash', 'Rosie', 'Daisy',
+  'Hazel', 'Clover', 'Juniper', 'Willow', 'Ruby', 'Periwinkle', 'Jasper', 'Milo', 'Otis', 'Rufus', 'Toby', 'Benny',
+  'Lulu', 'Gigi', 'Penny', 'Rusty', 'Ginger', 'Pepper', 'Cricket', 'Scout', 'Buddy', 'Charlie', 'Frankie',
+  'Georgie', 'Harvey', 'Iggy', 'Juno', 'Kiki', 'Lola', 'Mabel', 'Nell', 'Otto', 'Percy', 'Quinn', 'Remy',
+  'Sadie', 'Theo', 'Winnie', 'Birdie', 'Honey', 'Minnie', 'Taffy', 'Marigold', 'Nibs', 'Mo', 'Gus', 'Poppet',
+  'Sunny Jim'
 ];
 
 export class RuleError extends Error {
@@ -138,10 +187,30 @@ export function seededRandom(text) {
   };
 }
 
-export function pickColor(room, now, rand) {
-  const used = new Set(livingFish(room, now).map((f) => f.color));
-  const free = COLORS.filter((c) => !used.has(c));
-  const pool = free.length ? free : COLORS;
+export function typeOf(fish) {
+  const t = fish && fish.type;
+  return FISH_TYPES.some((x) => x.key === t) ? t : DEFAULT_TYPE;
+}
+
+export function typeLabel(fish) {
+  const key = typeOf(fish);
+  return FISH_TYPES.find((x) => x.key === key).label;
+}
+
+// Prefer a type that isn't in the bowl yet, so the tank looks mixed.
+export function pickType(room, now, rand) {
+  const used = new Set(livingFish(room, now).map(typeOf));
+  const free = FISH_TYPES.filter((t) => !used.has(t.key));
+  const pool = free.length ? free : FISH_TYPES;
+  return pool[Math.floor(rand() * pool.length)].key;
+}
+
+// A color that type comes in, preferring one no fish of that type has yet.
+export function pickColor(room, now, rand, type = DEFAULT_TYPE) {
+  const colors = FISH_TYPES.find((t) => t.key === type).colors;
+  const used = new Set(livingFish(room, now).filter((f) => typeOf(f) === type).map((f) => f.color));
+  const free = colors.filter((c) => !used.has(c));
+  const pool = free.length ? free : colors;
   return pool[Math.floor(rand() * pool.length)];
 }
 
@@ -166,9 +235,12 @@ export function addFish(room, { id, by, now, rand = Math.random }) {
   }
   if (Object.keys(next.fish).length >= MAX_FISH) throw new RuleError('full', 'Bowl is full');
   if (next.fish[id]) throw new RuleError('duplicate', 'Fish id already used');
+  const name = pickName(next, rand);
+  const type = pickType(next, now, rand);
   const fish = {
-    name: pickName(next, rand),
-    color: pickColor(next, now, rand),
+    name,
+    type,
+    color: pickColor(next, now, rand, type),
     addedAt: now,
     addedBy: cleanNickname(by),
     fullness: START_FULLNESS,

@@ -1,7 +1,7 @@
 # Fishbowl App — Build Spec (v2: shared with friends)
 
 > This is the source of truth for how the app behaves. If behavior changes, update this file in the same pull request.
-> Repo-specific details (folder, live link, rules limits) are at the end under **Notes for this repo**.
+> It's the owner's spec as written, adjusted only for this repo (folder, live link, file layout). Changes made here on the owner's request are marked **(repo)**, and details worked out while building are in **Notes for this repo** at the end.
 
 ## What this is
 
@@ -64,7 +64,13 @@ Shared data lives in **Firebase Firestore** (Google's free online database). The
 
 ## Fish names
 
-- Every new fish gets a random fun name from a built-in list of about 60 (e.g. Bubbles, Captain, Sprinkles, Admiral, Pickle, Noodle, Biscuit, Goldie, Flash, Pebble, Wiggles, Sir Swims-a-Lot). Use original names only — no famous movie or cartoon fish.
+- Every new fish gets a random fun name from a built-in list of **at least 200** cute names, mixing a few styles:
+  - **Food:** Pickle, Noodle, Biscuit, Dumpling, Waffle, Muffin, Tater Tot, Jellybean, Pretzel, Meatball, Crumpet, Nacho, Peanut, Mochi
+  - **Soft and silly:** Bubbles, Wiggles, Squiggles, Nibbles, Blip, Doodle, Pebble, Button, Marble, Sprout, Fizz, Bloop
+  - **Fancy titles:** Sir Swims-a-Lot, Admiral Bubbles, Duchess Fins, Captain Wiggles, Lady Glimmer, Professor Blub, Baron Von Splash
+  - **Fishy puns:** Finnegan, Gill-ian, Scaley, Bubba Gill, Splashley, Fintastic, Reel Deal, Wave-y Davey
+  - **Cozy classics:** Goldie, Sunny, Pip, Ziggy, Coco, Poppy, Maple, Olive, Sparky, Dash
+- Use original names only: no famous movie/cartoon fish, real people, or brand names. Keep them kind (nothing mean or rude).
 - Names are unique among the fish currently in the bowl. A name frees up once its fish is gone.
 - Show the name when a fish arrives ("Pickle joined the bowl!") and when it dies ("Noodle ate too much 😢" / "Biscuit starved 😢").
 - Names are chosen automatically; no renaming in this version.
@@ -77,9 +83,8 @@ Shared data lives in **Firebase Firestore** (Google's free online database). The
 - **Fullness drops 1 point every 864 seconds (14.4 minutes).** A full fish (100) starves in **24 hours**. A new fish has **12 hours**. Each feed buys about **72 minutes**.
 - Above **100** → the fish dies of **overfeeding**. At **0** → it dies of **starvation**.
 - Keep these as named constants at the top of `fish-rules.js` (`START_FULLNESS = 50`, `FEED_AMOUNT = 5`, `SECONDS_PER_POINT = 864`, `MAX_FISH = 10`) so they're easy to tune.
-- **Overfed fish pop** (as in v1): the fish balloons and wobbles for a moment, then bursts into scales and bubbles with a "POP!", and nearby fish dart away.
-- **Starved fish** turn pale, roll belly-up, float to the surface, and fade out after about 3 seconds.
-- Either way, the fish's spot then frees up.
+- A dead fish turns pale, rolls belly-up, floats to the surface, and fades out after about 3 seconds. Then its spot frees up.
+  - **(repo)** Exception, at the owner's request: an **overfed** fish **pops** instead (as in v1): it balloons and wobbles for a moment, then bursts into scales and bubbles with a "POP!", and nearby fish dart away. Starved fish float belly-up as above.
 
 **Important — hunger must work without any phone open.** Don't store a fullness value that the app keeps decreasing. Instead, store for each fish:
 
@@ -101,6 +106,7 @@ rooms/K7QM3P
   fish: {
     <fishId>: {
       name:        string               // fun auto-name, unique in the bowl
+      type:        string               // one of the fish types (missing on older fish = goldfish)
       color:       string               // from the palette
       addedAt:     number (ms)
       addedBy:     string
@@ -127,7 +133,7 @@ Write a rules file that:
 - allows reading **one bowl by its code** but **never listing** the `rooms` collection, so nobody can browse other people's bowls,
 - only allows the `rooms/{code}` path, where the code matches the 6-character format,
 - rejects a bowl with more than 10 fish or a `feedLog` longer than 20 entries,
-- rejects nicknames and fish names longer than 20 characters,
+- rejects nicknames, fish names, and fish types longer than 20 characters,
 - rejects deleting rooms.
 
 Include the file in the repo. The owner pastes it into the Firebase console (see setup steps below).
@@ -162,14 +168,39 @@ Goal: look like a real fishbowl sitting somewhere, not a flat icon. Everything d
 - A proper fish silhouette (body, tail fin, and a small dorsal/side fin), not just an oval.
 - Shading on the body (darker top, lighter belly) and a visible eye.
 - The tail flicks while swimming, and the body tilts toward its direction of travel.
-- Each fish gets a color from a varied palette (orange, gold, silver, red, calico, etc.).
+
+**Fish types (lots of variety):** each new fish gets a random type. Each type has its own body shape, fins, colors, and swimming style, so the bowl looks like a mixed community tank:
+
+| Type | Look | Swims |
+|---|---|---|
+| Goldfish | Classic round-ish body; orange, gold, white, or calico | Steady, relaxed |
+| Fantail | Egg-shaped body, big double flowing tail | Slow, wobbly |
+| Comet | Slim body, very long forked tail; orange/red and white | Fast glides |
+| Betta | Long, trailing, silky fins; deep blue, red, or purple | Slow and floaty, fins ripple |
+| Guppy | Small body, big fan tail with bright patterns | Quick little darts |
+| Neon tetra | Small and slim; glowing blue stripe, red lower half | Quick, zippy |
+| Angelfish | Tall, flat, triangle shape with long top/bottom fins; silver with dark stripes | Graceful, slow turns |
+| Zebra danio | Slim, horizontal blue-and-silver stripes | Fast, darting |
+| Molly | Chunky body, sail-like top fin; black, gold, or speckled | Steady |
+| Platy | Short, stocky; red, yellow, or blue-orange | Bobbing |
+| Pufferfish (cartoony freshwater puffer) | Round with a cute face and spots | Hovers, slow |
+| Pleco | Flat-bottomed, spotted brown, sucker mouth | Stays near the gravel and glass |
+
+- Colors vary within each type, so two goldfish rarely look identical.
+- The fullness look (below) applies to every type.
+
+**Data:** add `type` to each fish (one of the types above). Fish created before this change have no `type`; treat them as `goldfish`. The selected-fish card and messages use the type name, e.g. "Pickle · betta".
 
 **Fullness should be easy to see (pronounced, not subtle):**
 
-- Body girth scales clearly with fullness: about **0.8×** normal at 0 (thin, sunken belly), **1.0×** at 50, and **1.5×** at 100 (very round, belly bulging). Scale the body's height and belly curve, not the tail or eye.
-- Changes animate smoothly (about 0.5 s), never jump.
+- **Make it dramatic.** Someone glancing at the bowl should instantly tell a starving fish from a stuffed one.
+  - Body **height/girth:** about **0.6×** normal at 0 (skinny, sunken belly), **1.0×** at 50, and **2.0×** at 100 (nearly a ball).
+  - Body **length** also grows a little: **0.9×** at 0 up to **1.2×** at 100.
+  - The **belly** bulges visibly downward as it fills, with a lighter, stretched-looking belly highlight when very full.
+  - Scale the body, not the eye or fins, so a full fish looks comically round with small fins.
+- Size changes animate smoothly (about 0.6 s), with a slight wobble at the end, and never jump.
 - When one fish is fed, the flakes drop just above it and it swims up to eat them. When all are fed, flakes are spread across the surface.
-- On each feed: a quick "gulp" puff (grow ~10% past the new size, then settle back) and a few food flakes sinking from the waterline.
+- On each feed: a big "gulp" puff (grow ~25% past the new size, then bounce back), a few food flakes sinking from the waterline, and the fish's mouth opening as it eats.
 - Near full (90+): the fish swims noticeably slower and looks stuffed. This is the visual warning that one more feed is dangerous.
 - Hungry (below 20): colors fade toward grey and the fish swims a little erratically.
 
@@ -178,7 +209,12 @@ Goal: look like a real fishbowl sitting somewhere, not a flat icon. Everything d
 - Each fish keeps a minimum distance from the others (about 1.5 body lengths). When two get too close, they gently steer apart.
 - Each fish picks random destination points spread across the whole bowl, at different depths (top, middle, and bottom). Avoid everyone drifting to the same spot or clumping in the middle.
 - Fish stay inside the bowl's curved glass, above the gravel and below the waterline. They turn around smoothly at edges instead of bouncing.
-- New fish appear in the emptiest part of the bowl.
+- **New fish plop in from the top:**
+  - The fish drops from above the bowl into the water over the emptiest part of the bowl.
+  - It makes a small splash at the waterline: a few droplets, and ripple rings spreading across the surface.
+  - It sinks a short way with a few bubbles, does a little shake/wiggle, and then starts swimming normally.
+  - The whole plop takes about 1.5 seconds.
+  - Every phone in the bowl plays the plop, not just the one that added the fish. Only play it for fish added in the last ~10 seconds, so reopening the app doesn't replay old arrivals.
 
 ## PWA requirements
 
@@ -194,7 +230,8 @@ Inside `fishbowlapp/`:
 index.html
 styles.css
 app.js               // UI, scene, animation
-fish-rules.js        // pure game logic: constants, fullness math, feeding, deaths, names (no Firebase imports)
+fish-art.js          // (repo) how the 12 fish types look and swim; fullness shapes
+fish-rules.js        // pure game logic: constants, fullness math, feeding, deaths, names, types (no Firebase imports)
 bowl.js              // Firebase: sign-in, live listener, transactions (uses fish-rules.js)
 firebase-config.js   // the Firebase project's web config (from the owner)
 firestore.rules
@@ -220,7 +257,7 @@ CLAUDE.md                           // rules for Claude Code
 
 ## Tests
 
-`node fishbowlapp/tests/run.mjs` tests the game logic in `fish-rules.js` with no internet and no npm packages: fullness math over time (full fish starves at exactly 24 h), +5 per feed, feeding one fish leaves the others unchanged, fish names are unique in the bowl, the 20-feed limit (21st feed from empty kills it), overfeed death, starvation, the feed log keeping only 20 entries, the 10-fish limit, and room-code format. Also a privacy test that scans public files for email addresses and secret-looking keys (other than the known Firebase web config). GitHub runs the tests on every pull request and before every deploy.
+`node fishbowlapp/tests/run.mjs` tests the game logic in `fish-rules.js` with no internet and no npm packages: fullness math over time (full fish starves at exactly 24 h), +5 per feed, feeding one fish leaves the others unchanged, fish names are unique in the bowl, the name list has at least 200 unique names, every new fish gets a valid type, old fish with no type count as goldfish, the 20-feed limit (21st feed from empty kills it), overfeed death, starvation, the feed log keeping only 20 entries, the 10-fish limit, and room-code format. Also a privacy test that scans public files for email addresses and secret-looking keys (other than the known Firebase web config). GitHub runs the tests on every pull request and before every deploy.
 
 ## Deployment
 
@@ -234,7 +271,7 @@ CLAUDE.md                           // rules for Claude Code
 
 ## Firebase setup — the owner's manual steps
 
-The step-by-step Firebase setup is in `README.md`. After any change to `firestore.rules`, the new rules must be pasted into Firebase → Firestore Database → Rules → Publish.
+The step-by-step Firebase setup is in `README.md` (steps 1–5 are done). After any change to `firestore.rules`, the new rules must be pasted into Firebase → Firestore Database → Rules → Publish.
 
 ## Out of scope (for this version)
 
@@ -244,16 +281,21 @@ The step-by-step Firebase setup is in `README.md`. After any change to `firestor
 - Push notifications (e.g. "your fish are hungry"). A possible future idea.
 - Sound.
 
+The spec's "CLAUDE.md" section lives in `/CLAUDE.md` at the repo root.
+
 ## Notes for this repo
 
-These are details worked out while building, which the original spec left open:
+These are details worked out while building, which the spec left open:
 
 - **The feed log is append-only** in `firestore.rules`: a save may add one new entry at the front (dropping the oldest once there are 20), and older entries can't be changed or erased. This keeps the rules within Firestore's limit of 1000 checks per request even for a completely full bowl (only the new entry needs checking), and it means nobody can rewrite the feeding history.
 - Because that rule compares against the saved bowl, a save built on an out-of-date copy (two friends tapping at the same instant) can be refused. `bowl.js` then retries the whole transaction, up to 5 times with a short random pause, so both feeds land.
-- The per-fish checks in the rules are deliberately small for the same 1000-check reason.
+- The per-fish checks in the rules are deliberately small for the same 1000-check reason: a fish's name, `addedBy` and `type` are each checked to be 20 characters or fewer. A completely full bowl with every field at maximum length leaves roughly 15% of the check budget spare.
 - **Adding a fish clears out dead fish first**, so the bowl document never holds more than 10 fish in total (the rules count dead fish too).
 - A starved fish's `diedAt` is recorded as the moment it actually reached 0 (worked out from the formula), not the moment a phone noticed.
-- **Changes show without waiting.** A fed fish changes size (and an overfed fish pops) the moment the update arrives; the falling flakes are just for show. The phone that taps shows its own change instantly by applying the same game rules locally, then saves it in a transaction using the same tap time (and, for a new fish, the same fish id and name), so the saved result matches. If saving fails, the change is undone and a message explains why.
+- **Changes show without waiting.** A fed fish changes size (and an overfed fish pops) the moment the update arrives; the falling flakes are just for show. The phone that taps shows its own change instantly by applying the same game rules locally, then saves it in a transaction using the same tap time (and, for a new fish, the same fish id, name, type and color), so the saved result matches. If saving fails, the change is undone and a message explains why.
 - After more than 30 seconds in the background, the app starts a fresh live listener when it comes back, because phones often freeze a backgrounded app's connection.
 - **Measuring the delay:** open the app with `?debug` at the end of the link on two phones. When a friend feeds or adds a fish, the message shows how many milliseconds it took to arrive (this depends on the two phones' clocks agreeing).
+- **Types:** stored as short keys (`goldfish`, `fantail`, `comet`, `betta`, `guppy`, `tetra`, `angelfish`, `danio`, `molly`, `platy`, `puffer`, `pleco`); the screen shows the full name (e.g. "neon tetra", "zebra danio", "pufferfish"). A new fish prefers a type that isn't in the bowl yet, so a full bowl of 10 has 10 different types. Each type has 2–4 color looks, and every fish gets a slight shade of its own.
+- The arrival message includes the type: "Pickle the betta joined the bowl!". The card reads "Pickle · betta".
+- Names that belong to famous cartoon or movie characters (for example Coral, Pearl, Oscar) are left out of the name list.
 - Tapping empty water also sends a ripple that makes nearby fish dart away (a small extra from v1).

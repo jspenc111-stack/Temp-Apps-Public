@@ -8,11 +8,12 @@ A fishbowl you share with friends. Anyone in the bowl can add fish (up to 10) an
 ## How to play
 
 - **Create a bowl** and you get a 6-character code, like `K7QM3P`. Tap **Share** to send friends a link that opens your bowl.
-- **Add fish:** up to 10. Each gets a random name, like Pickle or Sir Swims-a-Lot.
+- **Add fish:** up to 10. Each plops in from the top and gets a random name (like Pickle or Sir Swims-a-Lot) and one of 12 fish types: goldfish, fantail, comet, betta, guppy, neon tetra, angelfish, zebra danio, molly, platy, pufferfish or pleco. Each type looks and swims differently.
 - **Feed all** feeds every fish. To feed just one, tap it and use **Feed this fish**.
 - Each feed adds 5 to a fish's fullness (out of 100). A new fish starts at 50.
 - Fish get hungry slowly: they lose 1 point every 14.4 minutes, even when nobody has the app open. A full fish lasts 24 hours.
-- **Over 100, a fish dies from overeating.** Near full it gets very round and slow. That's your warning.
+- **You can see how full a fish is:** a hungry fish is skinny, and a full one is nearly a ball.
+- **Over 100, a fish pops from overeating.** Near full it gets very round and slow. That's your warning.
 - **At 0, a fish starves.** Hungry fish turn grey and swim a bit erratically.
 - The line under the fish count ("Last fed 3 min ago by Sam") shows who fed them last. Tap it to see the last 20 feeds.
 - **Menu (⋯):** change your nickname, or **Leave bowl**. Leaving only forgets the bowl on your phone; it stays there for your friends.
