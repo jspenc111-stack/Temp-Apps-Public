@@ -1,0 +1,32 @@
+{
+  "format": "row-tracker-pattern",
+  "version": 1,
+  "title": "Little Crochet Ball",
+  "designer": "Example Designer",
+  "source": "Invented example for testing",
+  "craft": "crochet",
+  "units": "cm",
+  "info": {
+    "materials": ["20 g cotton yarn", "A handful of toy stuffing"],
+    "needles": ["3.5 mm hook"],
+    "notes": ["Worked in a spiral without joining rounds. Use a marker for the first stitch."]
+  },
+  "sections": [
+    {
+      "id": "ball", "name": "Ball", "worked": "round",
+      "steps": [
+        { "type": "action", "text": "Make a magic ring with the 3.5 mm hook.", "needle": "3.5 mm" },
+        { "type": "row", "label": "Round 1", "text": "6 sc into the ring.", "stitchesAfter": 6 },
+        { "type": "row", "label": "Round 2", "text": "2 sc in each stitch around.", "stitchesAfter": 12 },
+        { "type": "row", "label": "Round 3", "text": "*1 sc, 2 sc in next stitch*; repeat from * around.", "stitchesAfter": 18 },
+        { "type": "row", "label": "Round 4", "text": "*2 sc, 2 sc in next stitch*; repeat from * around.", "stitchesAfter": 24 },
+        { "type": "row", "label": "Rounds 5–8", "text": "1 sc in each stitch around.", "count": 4, "stitchesAfter": 24 },
+        { "type": "row", "label": "Round 9", "text": "*2 sc, sc2tog*; repeat from * around.", "stitchesAfter": 18 },
+        { "type": "row", "label": "Round 10", "text": "*1 sc, sc2tog*; repeat from * around.", "stitchesAfter": 12 },
+        { "type": "action", "text": "Stuff the ball firmly." },
+        { "type": "row", "label": "Round 11", "text": "Sc2tog around.", "stitchesAfter": 6 },
+        { "type": "action", "text": "Close up the ball.", "checklist": ["Cut the yarn, leaving a tail", "Thread the tail through the last 6 stitches and pull tight", "Weave in the end"], "stitchesAfter": 0 }
+      ]
+    }
+  ]
+}

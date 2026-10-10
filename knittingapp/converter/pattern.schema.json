@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Row Tracker pattern file",
+  "description": "One knitting or crochet pattern, in the shape the Row Tracker app opens. A pattern holds sections, and a section holds steps. Two rules can't be written in JSON Schema, so check them by hand: (1) a per-size object must have an entry for every size the step applies to (the step's own `sizes`, or else every size in the pattern), and may only use size names from the pattern's `sizes`; (2) a `group` pass number can't be bigger than its `of`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "title", "sections"],
+  "properties": {
+    "format": { "const": "row-tracker-pattern", "description": "Lets the app recognise the file." },
+    "version": { "const": 1, "description": "Version of this data model." },
+    "title": { "$ref": "#/$defs/name", "description": "Pattern name." },
+    "designer": { "$ref": "#/$defs/name", "description": "Designer's name." },
+    "source": { "$ref": "#/$defs/name", "description": "Publisher, website or book." },
+    "craft": { "enum": ["knit", "crochet"], "description": "Defaults to knit. Changes wording, e.g. hook vs needle." },
+    "units": { "enum": ["cm", "in"], "description": "Units for lengths and gauge. Defaults to cm." },
+    "sizes": {
+      "description": "Size names in pattern order, e.g. [\"S\", \"M\", \"L\"]. Leave out for one-size patterns.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 40, "pattern": "\\S" }
+    },
+    "info": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "materials": { "$ref": "#/$defs/textList", "description": "As written in the pattern, e.g. \"100 (100) 150 g\"." },
+        "needles": { "$ref": "#/$defs/textList" },
+        "gauge": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "e.g. 22 stitches and 30 rows over 10 (in the pattern's units).",
+          "properties": {
+            "stitches": { "$ref": "#/$defs/amount" },
+            "rows": { "$ref": "#/$defs/amount" },
+            "over": { "$ref": "#/$defs/amount" },
+            "note": { "$ref": "#/$defs/text" }
+          }
+        },
+        "notes": { "$ref": "#/$defs/textList", "description": "Construction notes worth keeping." }
+      }
+    },
+    "sections": {
+      "description": "The pattern in working order.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "reviewNotes": { "$ref": "#/$defs/textList", "description": "Anything the converter was unsure about, in plain words." }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S" },
+    "textList": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/text" } },
+    "amount": { "type": "number", "exclusiveMinimum": 0, "maximum": 100000 },
+    "wholeFrom1": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "stitchCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "rowCount": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "textOrPerSize": {
+      "anyOf": [
+        { "$ref": "#/$defs/text" },
+        { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/text" } }
+      ]
+    },
+    "rowCountOrPerSize": {
+      "anyOf": [
+        { "$ref": "#/$defs/rowCount" },
+        { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/rowCount" } }
+      ]
+    },
+    "stitchCountOrPerSize": {
+      "anyOf": [
+        { "$ref": "#/$defs/stitchCount" },
+        { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/stitchCount" } }
+      ]
+    },
+    "amountOrPerSize": {
+      "anyOf": [
+        { "$ref": "#/$defs/amount" },
+        { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/amount" } }
+      ]
+    },
+    "wholeOrPerSize": {
+      "anyOf": [
+        { "$ref": "#/$defs/wholeFrom1" },
+        { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/wholeFrom1" } }
+      ]
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "steps"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 60, "pattern": "\\S", "description": "Short and unique, e.g. \"yoke\"." },
+        "name": { "$ref": "#/$defs/name", "description": "e.g. \"Yoke\"." },
+        "worked": { "enum": ["round", "flat"], "description": "Defaults to flat. The app says Round or Row." },
+        "repeat": { "type": "integer", "minimum": 1, "maximum": 20, "description": "2 for \"work the second sleeve the same way\". Defaults to 1." },
+        "steps": { "type": "array", "minItems": 1, "maxItems": 2000, "items": { "$ref": "#/$defs/step" } }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "enum": ["row", "measure", "action"], "description": "row: one or more identical rows or rounds. measure: work until it measures `length`. action: a one-off step that isn't a row." },
+        "text": { "$ref": "#/$defs/textOrPerSize", "description": "The instruction in the pattern's words, with only one size's numbers." },
+        "label": { "$ref": "#/$defs/name", "description": "The pattern's own name for the step, e.g. \"Round 2\", \"Rounds 3–5\"." },
+        "count": { "$ref": "#/$defs/rowCountOrPerSize", "description": "Row steps only. Identical rows in a row: \"Rounds 3–5: Knit\" is 3. Defaults to 1." },
+        "stitchesAfter": { "$ref": "#/$defs/stitchCountOrPerSize", "description": "Stitches on the needle after this step. Only when stated or certain." },
+        "side": { "enum": ["RS", "WS"], "description": "Row steps only. Right or wrong side." },
+        "length": { "$ref": "#/$defs/amountOrPerSize", "description": "Measure steps only, and required there. Target length in the pattern's units." },
+        "checklist": {
+          "description": "Action steps only. The parts of a multi-part step, one per item.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/textOrPerSize" }
+        },
+        "needle": { "type": "string", "minLength": 1, "maxLength": 60, "pattern": "\\S", "description": "Needle or hook to use from here on, e.g. \"3 mm\"." },
+        "sizes": {
+          "description": "Only these sizes do this step.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+        },
+        "group": {
+          "description": "Repeat info for display: \"Yoke pattern, pass 2 of 3\".",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "pass", "of"],
+          "properties": {
+            "name": { "$ref": "#/$defs/name" },
+            "pass": { "$ref": "#/$defs/wholeFrom1" },
+            "of": { "$ref": "#/$defs/wholeOrPerSize" }
+          }
+        },
+        "page": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "PDF page, for looking things up." },
+        "flag": { "$ref": "#/$defs/text", "description": "Why the converter is unsure about this step." }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "measure" } } }, "then": { "required": ["length"] }, "else": { "properties": { "length": false } } },
+        { "if": { "properties": { "type": { "const": "row" } } }, "else": { "properties": { "count": false, "side": false } } },
+        { "if": { "properties": { "type": { "const": "action" } } }, "else": { "properties": { "checklist": false } } }
+      ]
+    }
+  }
+}

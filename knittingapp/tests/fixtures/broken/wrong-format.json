@@ -1,0 +1,8 @@
+{
+  "format": "some-other-file",
+  "version": 1,
+  "title": "Wrong Format Example",
+  "sections": [
+    { "id": "main", "name": "Pattern", "steps": [ { "type": "row", "text": "Knit." } ] }
+  ]
+}

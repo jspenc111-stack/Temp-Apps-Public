@@ -7,7 +7,7 @@
 - [ ] Something else (explained below).
 
 ## Checks
-- [ ] Tests pass (`node fishbowlapp/tests/run.mjs`)
+- [ ] Tests pass for the app I changed
 - [ ] `SPEC.md` updated if the app behaves differently
 - [ ] Cache name in `sw.js` bumped if app files changed
 - [ ] No personal details or secret keys added
