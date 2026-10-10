@@ -2,6 +2,8 @@
 
 This repo holds several small apps, each in its own folder: `fishbowlapp/` (Fishbowl), `Counter/` (Tally Counter) and `knittingapp/` (Row Tracker). GitHub Pages publishes the whole repo. The rules below are for Fishbowl, but rules 1, 2 and 9 apply to every app here.
 
+Row Tracker (`knittingapp/`) has its own rules in `knittingapp/CLAUDE.md`.
+
 A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (max 15), and feed them. Overfeeding or starving kills fish. Static site on GitHub Pages; shared data in Firebase Firestore with Anonymous Auth. **`fishbowlapp/SPEC.md` is the source of truth for behavior.**
 
 ## About the owner

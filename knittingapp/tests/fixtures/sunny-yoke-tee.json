@@ -1,0 +1,78 @@
+{
+  "format": "row-tracker-pattern",
+  "version": 1,
+  "title": "Sunny Yoke Tee",
+  "designer": "Example Designer",
+  "source": "Invented example for testing",
+  "craft": "knit",
+  "units": "cm",
+  "sizes": ["S", "M", "L"],
+  "info": {
+    "materials": ["150 (150) 200 g light fingering yarn"],
+    "needles": ["3 mm circular, 80 cm", "4 mm circular, 80 cm"],
+    "gauge": { "stitches": 22, "rows": 30, "over": 10, "note": "Stockinette on 4 mm" },
+    "notes": ["Worked top down in one piece with short sleeves."]
+  },
+  "sections": [
+    {
+      "id": "yoke", "name": "Yoke", "worked": "round",
+      "steps": [
+        { "type": "action", "text": { "S": "Cast on 96 sts with the 3 mm needle and join in the round.", "M": "Cast on 104 sts with the 3 mm needle and join in the round.", "L": "Cast on 112 sts with the 3 mm needle and join in the round." }, "needle": "3 mm", "stitchesAfter": { "S": 96, "M": 104, "L": 112 }, "page": 2 },
+        { "type": "row", "label": "Rib", "text": "*K1 tbl, p1*; repeat from * to end.", "count": 6 },
+        { "type": "action", "text": "Change to the 4 mm needle and place a beginning-of-round marker.", "needle": "4 mm" },
+
+        { "type": "row", "label": "Round 1", "text": "Knit.", "group": { "name": "Yoke pattern", "pass": 1, "of": { "S": 2, "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Round 2", "text": "*M1, k8*; repeat from * to end.", "stitchesAfter": { "S": 108, "M": 117, "L": 126 }, "group": { "name": "Yoke pattern", "pass": 1, "of": { "S": 2, "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Rounds 3–5", "text": "Knit.", "count": 3, "group": { "name": "Yoke pattern", "pass": 1, "of": { "S": 2, "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Round 6", "text": "*Yarn over, k2tog*; repeat from * to end.", "group": { "name": "Yoke pattern", "pass": 1, "of": { "S": 2, "M": 3, "L": 3 } } },
+
+        { "type": "row", "label": "Round 1", "text": "Knit.", "group": { "name": "Yoke pattern", "pass": 2, "of": { "S": 2, "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Round 2", "text": { "S": "*M1, k6*; repeat from * to end.", "M": "K3, *M1, k6*; repeat from * to end.", "L": "*M1, k7*; repeat from * to end." }, "stitchesAfter": { "S": 126, "M": 136, "L": 144 }, "group": { "name": "Yoke pattern", "pass": 2, "of": { "S": 2, "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Rounds 3–5", "text": "Knit.", "count": 3, "group": { "name": "Yoke pattern", "pass": 2, "of": { "S": 2, "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Round 6", "text": "*Yarn over, k2tog*; repeat from * to end.", "group": { "name": "Yoke pattern", "pass": 2, "of": { "S": 2, "M": 3, "L": 3 } } },
+
+        { "type": "row", "label": "Round 1", "text": "Knit.", "sizes": ["M", "L"], "group": { "name": "Yoke pattern", "pass": 3, "of": { "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Round 2", "text": { "M": "K4, *M1, k6*; repeat from * to end.", "L": "*M1, k8*; repeat from * to end." }, "sizes": ["M", "L"], "stitchesAfter": { "M": 158, "L": 162 }, "group": { "name": "Yoke pattern", "pass": 3, "of": { "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Rounds 3–5", "text": "Knit.", "count": 3, "sizes": ["M", "L"], "group": { "name": "Yoke pattern", "pass": 3, "of": { "M": 3, "L": 3 } } },
+        { "type": "row", "label": "Round 6", "text": "*Yarn over, k2tog*; repeat from * to end.", "sizes": ["M", "L"], "group": { "name": "Yoke pattern", "pass": 3, "of": { "M": 3, "L": 3 } } },
+
+        { "type": "action", "label": "Divide for body and sleeves", "text": "Divide the stitches for body and sleeves.",
+          "checklist": [
+            { "S": "Put the first 27 sts on a holder (first sleeve)", "M": "Put the first 35 sts on a holder (first sleeve)", "L": "Put the first 35 sts on a holder (first sleeve)" },
+            "Cast on 4 sts under the arm",
+            { "S": "Knit 36 sts (front)", "M": "Knit 44 sts (front)", "L": "Knit 46 sts (front)" },
+            { "S": "Put the next 27 sts on a holder (second sleeve)", "M": "Put the next 35 sts on a holder (second sleeve)", "L": "Put the next 35 sts on a holder (second sleeve)" },
+            "Cast on 4 sts under the arm",
+            { "S": "Knit 36 sts (back)", "M": "Knit 44 sts (back)", "L": "Knit 46 sts (back)" }
+          ],
+          "stitchesAfter": { "S": 80, "M": 96, "L": 100 } }
+      ]
+    },
+    {
+      "id": "body", "name": "Body", "worked": "round",
+      "steps": [
+        { "type": "measure", "text": "Knit every round until the body measures 22 cm from the divide.", "length": 22 },
+        { "type": "action", "text": "Change to the 3 mm needle.", "needle": "3 mm" },
+        { "type": "measure", "text": "Work *k1 tbl, p1* rib until the rib measures 4 cm.", "length": 4 },
+        { "type": "action", "text": "Bind off in pattern." }
+      ]
+    },
+    {
+      "id": "sleeve", "name": "Sleeve", "worked": "round", "repeat": 2,
+      "steps": [
+        { "type": "action", "text": { "S": "Put the 27 held sleeve sts on the 4 mm needle and pick up 4 sts under the arm.", "M": "Put the 35 held sleeve sts on the 4 mm needle and pick up 4 sts under the arm.", "L": "Put the 35 held sleeve sts on the 4 mm needle and pick up 4 sts under the arm." }, "needle": "4 mm", "stitchesAfter": { "S": 31, "M": 39, "L": 39 } },
+        { "type": "row", "label": "Rounds 1–3", "text": "Knit.", "count": 3 },
+        { "type": "action", "text": "Change to the 3 mm needle.", "needle": "3 mm" },
+        { "type": "measure", "text": "Work *k1 tbl, p1* rib until the rib measures 2 cm.", "length": 2 },
+        { "type": "action", "text": "Bind off in pattern." }
+      ]
+    },
+    {
+      "id": "finishing", "name": "Finishing",
+      "steps": [
+        { "type": "action", "text": "Finish the top.", "checklist": ["Sew the small gap under each arm", "Weave in all ends"] }
+      ]
+    }
+  ],
+  "reviewNotes": ["Round 2 of pass 2 for size M starts with K3; double-check against the PDF."]
+}

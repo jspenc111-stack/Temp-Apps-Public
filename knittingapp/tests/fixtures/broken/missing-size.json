@@ -1,0 +1,15 @@
+{
+  "format": "row-tracker-pattern",
+  "version": 1,
+  "title": "Missing Size Example",
+  "sizes": ["S", "M", "L"],
+  "sections": [
+    {
+      "id": "main", "name": "Pattern",
+      "steps": [
+        { "type": "action", "text": { "S": "Cast on 20 sts.", "L": "Cast on 28 sts." }, "stitchesAfter": { "S": 20, "M": 24, "L": 28 } },
+        { "type": "row", "text": "Knit." }
+      ]
+    }
+  ]
+}

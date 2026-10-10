@@ -1,0 +1,14 @@
+{
+  "format": "row-tracker-pattern",
+  "version": 1,
+  "title": "Unknown Step Type Example",
+  "sections": [
+    {
+      "id": "main", "name": "Pattern",
+      "steps": [
+        { "type": "row", "text": "Knit." },
+        { "type": "dance", "text": "Do a little dance." }
+      ]
+    }
+  ]
+}
