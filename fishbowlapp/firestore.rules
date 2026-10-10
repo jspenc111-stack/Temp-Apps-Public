@@ -12,6 +12,9 @@ rules_version = '2';
 //   feed log, hearts are append-only (one new heart at the front).
 // - The feed log is append-only: each save may add one new entry at the
 //   front, and older entries can't be changed or erased.
+// - Old Barnaby the crab can rescue a fish at most once every 24 hours: his
+//   rescue count only goes up by 1 at a time, and only 24 hours or more
+//   after his last rescue.
 // - Bowls can't be deleted.
 //
 // Firestore stops after 1000 checks per request, so the checks are kept
@@ -60,7 +63,7 @@ service cloud.firestore {
 
     function logEntryOk(e) {
       return e is map
-        && e.keys().hasOnly(['by', 'at', 'fishId', 'fishName'])
+        && e.keys().hasOnly(['by', 'at', 'fishId', 'fishName', 'rescue'])
         && shortText(e.by)
         && e.at is number
         && (e.get('fishName', null) == null || shortText(e.fishName));
@@ -85,8 +88,22 @@ service cloud.firestore {
       return p is list && p.size() <= 30;
     }
 
+    // Old Barnaby's daily rescue. `crab` is missing until his first rescue
+    // (missing = snack ready, 0 rescues). It either stays exactly the same,
+    // or records one more rescue: the count goes up by exactly 1, and the
+    // new rescue time is at least 24 hours after the previous one and not
+    // in the future (10 minutes' leeway for phone clocks that run fast).
+    function crabOk(next, prev) {
+      return next == prev
+        || (next.keys().hasOnly(['lastRescueAt', 'rescues'])
+            && next.rescues == prev.rescues + 1
+            && next.lastRescueAt is number
+            && (prev.lastRescueAt == null || next.lastRescueAt >= prev.lastRescueAt + 86400000)
+            && next.lastRescueAt <= request.time.toMillis() + 600000);
+    }
+
     function validRoom(d) {
-      return d.keys().hasOnly(['createdAt', 'lastFedAt', 'lastFedBy', 'feedLog', 'fish', 'hearts', 'week', 'lastWeek', 'record'])
+      return d.keys().hasOnly(['createdAt', 'lastFedAt', 'lastFedBy', 'feedLog', 'fish', 'hearts', 'week', 'lastWeek', 'record', 'crab'])
         && d.keys().hasAll(['createdAt', 'feedLog', 'fish'])
         && d.createdAt is timestamp
         && (d.get('lastFedAt', null) == null || d.lastFedAt is timestamp)
@@ -107,12 +124,15 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.feedLog == []
         && request.resource.data.get('hearts', []) == []
+        && !request.resource.data.keys().hasAny(['crab'])
         && validRoom(request.resource.data);
 
       allow update: if signedIn() && isRoomCode(code)
         && request.resource.data.createdAt == resource.data.createdAt
         && appendOk(request.resource.data.feedLog, resource.data.feedLog, 20)
         && appendOk(request.resource.data.get('hearts', []), resource.data.get('hearts', []), 10)
+        && crabOk(request.resource.data.get('crab', {'lastRescueAt': null, 'rescues': 0}),
+                  resource.data.get('crab', {'lastRescueAt': null, 'rescues': 0}))
         && validRoom(request.resource.data);
 
       allow delete: if false;

@@ -22,6 +22,14 @@ export const HEART_COOLDOWN_MS = 3000;  // one heart per phone every 3 seconds
 export const PLAYERS_MAX = 30;          // blame board: players tracked per week
 const WEEK_MS = 7 * 24 * 3600 * 1000;
 
+// Old Barnaby the crab: once every 24 hours he saves a fish from starving.
+// (repo) The owner asked for 95 instead of the spec's 25.
+export const RESCUE_FULLNESS = 95;
+export const RESCUE_COOLDOWN_HOURS = 24;
+export const CRAB_NAME = 'Barnaby';
+const RESCUE_COOLDOWN_MS = RESCUE_COOLDOWN_HOURS * 3600 * 1000;
+export const TIP_RECENT_MS = 30 * 1000;  // how long an arrival, death, birthday or rescue is "news"
+
 const MS_PER_POINT = SECONDS_PER_POINT * 1000;
 
 // Easy-to-read characters only: A–Z and 2–9, without I, O, 0 and 1.
@@ -249,8 +257,79 @@ function clone(room) {
     feedLog: [...(room.feedLog || [])],
     fish: Object.fromEntries(Object.entries(room.fish || {}).map(([id, f]) => [id, { ...f }])),
     ...(room.hearts ? { hearts: [...room.hearts] } : {}),
-    ...(room.week ? { week: { start: room.week.start, players: (room.week.players || []).map((p) => ({ ...p })) } } : {})
+    ...(room.week ? { week: { start: room.week.start, players: (room.week.players || []).map((p) => ({ ...p })) } } : {}),
+    ...(room.crab ? { crab: { ...room.crab } } : {})
   };
+}
+
+// ---------------------------------------------------------------------------
+// Old Barnaby's daily rescue
+// ---------------------------------------------------------------------------
+
+// Bowls with no crab data yet start with the snack ready and 0 rescues.
+export function crabOf(room) {
+  const c = (room && room.crab) || {};
+  return { lastRescueAt: c.lastRescueAt ?? null, rescues: c.rescues ?? 0 };
+}
+
+// When his emergency snack is (or was) ready again; null = ready already.
+export function snackReadyAt(crab) {
+  const c = crabOf({ crab });
+  return c.lastRescueAt == null ? null : c.lastRescueAt + RESCUE_COOLDOWN_MS;
+}
+
+export function snackReady(crab, at) {
+  const readyAt = snackReadyAt(crab);
+  return readyAt == null || at >= readyAt;
+}
+
+export function snackStatus(crab, now) {
+  if (snackReady(crab, now)) return 'Emergency snack: ready ✅';
+  const h = Math.ceil((snackReadyAt(crab) - now) / 3600000);
+  return `Snack recharging — ready in ${h} hour${h === 1 ? '' : 's'}`;
+}
+
+// Replay everything since the bowl was last saved, in time order: each
+// moment a fish's fullness hits 0, and whether Barnaby's snack was ready
+// right then. Ready → he saves it (fullness back to RESCUE_FULLNESS, timed
+// at the moment it hit 0) and the snack recharges for 24 hours. Not ready →
+// it starved. Every phone gets the same answer from the same saved bowl,
+// even if nobody had the app open at the time.
+//
+// `maxRescues` stops the replay just before a further rescue (the database
+// accepts one rescue per save); `more` is then true.
+// Returns { room, events: [{ kind: 'rescue' | 'starved', id, name, at }], more }.
+export function resolveBowl(bowl, now, { maxRescues = Infinity } = {}) {
+  const next = clone(bowl);
+  const events = [];
+  let rescues = 0;
+  for (;;) {
+    let first = null;
+    for (const [id, f] of Object.entries(next.fish)) {
+      if (f.diedAt != null) continue;
+      const at = starvesAt(f);
+      if (at > now) continue;
+      // Same moment: the fish that's been in the bowl longest goes first.
+      if (!first || at < first.at || (at === first.at && (f.addedAt < first.f.addedAt || (f.addedAt === first.f.addedAt && id < first.id)))) {
+        first = { id, f, at };
+      }
+    }
+    if (!first) return { room: next, events, more: false };
+    const { id, f, at } = first;
+    const crab = crabOf(next);
+    if (snackReady(crab, at)) {
+      if (rescues >= maxRescues) return { room: next, events, more: true };
+      rescues++;
+      Object.assign(f, { fullness: RESCUE_FULLNESS, fullnessAt: at, rescuedAt: at });
+      next.crab = { lastRescueAt: at, rescues: crab.rescues + 1 };
+      next.feedLog = [{ by: CRAB_NAME, at, fishId: id, fishName: f.name, rescue: true }, ...next.feedLog].slice(0, FEED_LOG_MAX);
+      events.push({ kind: 'rescue', id, name: f.name, at });
+    } else {
+      Object.assign(f, starvedFields(f));
+      updateRecord(next, f);
+      events.push({ kind: 'starved', id, name: f.name, at });
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +416,8 @@ export function blameBoard(room, now) {
     oldestFish: oldest ? { name: oldest.name, hours: ageHours(oldest, now) } : null,
     table: [...players].sort((a, b) => b.feeds - a.feeds || b.added - a.added || a.nick.localeCompare(b.nick)),
     record: room.record ?? null,
-    lastWeek: lastWeek ?? null
+    lastWeek: lastWeek ?? null,
+    rescues: crabOf(room).rescues
   };
 }
 
@@ -347,7 +427,7 @@ export function blameBoard(room, now) {
 
 // Send love to everyone, or to one fish. Keeps the newest 10 hearts.
 export function sendHeart(room, { fishId = null, by, now }) {
-  const next = clone(room);
+  const next = resolveBowl(room, now).room;
   let fishName = null;
   if (fishId != null) {
     const f = next.fish[fishId];
@@ -366,7 +446,7 @@ export function describeHeart(h) {
 // Add one fish. Clears out dead fish first so the bowl never holds more than
 // MAX_FISH entries in total.
 export function addFish(room, { id, by, now, rand = Math.random }) {
-  const next = clone(room);
+  const next = resolveBowl(room, now).room;
   for (const [fid, f] of Object.entries(next.fish)) {
     if (!isAlive(f, now)) delete next.fish[fid];
   }
@@ -392,12 +472,14 @@ export function addFish(room, { id, by, now, rand = Math.random }) {
 
 // Feed every living fish (fishId = null) or just one.
 // Returns the new room plus which fish were fed and which died.
+// Barnaby's rescues (and starvations) up to now are settled first.
 export function feed(room, { fishId = null, by, now }) {
-  const next = clone(room);
+  const settled = resolveBowl(room, now);
+  const next = settled.room;
   const nickname = cleanNickname(by);
   const targets = fishId == null ? Object.keys(next.fish) : [fishId];
   const fed = [];
-  const died = [];
+  const died = settled.events.filter((e) => e.kind === 'starved').map((e) => ({ id: e.id, name: e.name, cause: 'starved' }));
   let fishName = null;
 
   if (fishId != null) {
@@ -409,15 +491,7 @@ export function feed(room, { fishId = null, by, now }) {
   for (const id of targets) {
     const f = next.fish[id];
     if (!f || f.diedAt != null) continue;
-    const cur = currentFullness(f, now);
-    if (cur <= 0) {
-      // Already starved; nobody had recorded it yet.
-      Object.assign(f, starvedFields(f));
-      updateRecord(next, f);
-      died.push({ id, name: f.name, cause: 'starved' });
-      continue;
-    }
-    f.fullness = cur + FEED_AMOUNT;
+    f.fullness = currentFullness(f, now) + FEED_AMOUNT;
     f.fullnessAt = now;
     fed.push({ id, name: f.name });
     if (f.fullness > MAX_FULLNESS) {
@@ -446,28 +520,26 @@ function starvedFields(f) {
 }
 
 // Housekeeping any phone may do: remove fish that died over a minute ago,
-// then record fish that have starved. `changed` is false when there is
-// nothing to write, so phones don't write for no reason.
+// then record Barnaby's rescue (at most one per save, which is all the
+// database accepts; `more` says another is waiting) and starvations.
+// `changed` is false when there is nothing to write, so phones don't write
+// for no reason.
 export function recordDeaths(room, now) {
-  const next = clone(room);
-  const starved = [];
+  const tidy = clone(room);
   let changed = false;
-  for (const [id, f] of Object.entries(next.fish)) {
+  for (const [id, f] of Object.entries(tidy.fish)) {
     if (f.diedAt != null && now - f.diedAt >= CLEANUP_AFTER_MS) {
-      delete next.fish[id];
+      delete tidy.fish[id];
       changed = true;
     }
   }
-  for (const [id, f] of Object.entries(next.fish)) {
-    if (f.diedAt == null && currentFullness(f, now) <= 0) {
-      Object.assign(f, starvedFields(f));
-      updateRecord(next, f);
-      starved.push({ id, name: f.name });
-      changed = true;
-    }
-  }
+  const settled = resolveBowl(tidy, now, { maxRescues: 1 });
+  const next = settled.room;
+  if (settled.events.length) changed = true;
   if (changed) ensureWeek(next, now);
-  return { room: next, changed, starved };
+  const starved = settled.events.filter((e) => e.kind === 'starved').map(({ id, name }) => ({ id, name }));
+  const rescued = settled.events.filter((e) => e.kind === 'rescue').map(({ id, name, at }) => ({ id, name, at }));
+  return { room: next, changed, starved, rescued, more: settled.more };
 }
 
 // True when recordDeaths would change something.
@@ -478,10 +550,113 @@ export function needsHousekeeping(room, now) {
 }
 
 // ---------------------------------------------------------------------------
+// What Old Barnaby says
+// ---------------------------------------------------------------------------
+
+// Original sayings for when nothing much is going on (and his tap card).
+export const CRAB_WISDOM = [
+  'A full belly is good. A bursting one, less so.',
+  'Swim slow, little ones. The water\'s not going anywhere.',
+  'I\'ve seen many fish come and go. Feed \'em kindly.',
+  'When in doubt, go sideways.',
+  'Every bubble rises in its own time.',
+  'A little flake goes a long way.',
+  'Nobody ever regretted a gentle swim.',
+  'The gravel remembers every footstep. Mostly mine.',
+  'Patience, youngsters. Dinner always comes.',
+  'Ask before you feed. Somebody might have beaten you to it.',
+  'Kindness floats. Grumpiness sinks.',
+  'An old shell is still a good shell.',
+  'Even the castle was a pebble once. Probably.',
+  'Take the long way round. The view\'s better.',
+  'If you\'re lost, follow the bubbles up.',
+  'Don\'t race the current. Make friends with it.',
+  'Two flakes is a snack. Twenty is a mistake.',
+  'Sideways is still a way forward.',
+  'Feed the fish, not the worry.',
+  'A good nap fixes most things.',
+  'Every fish deserves a friend nearby.',
+  'Listen to your fins. They know things.',
+  'Slow and steady fills the belly.',
+  'I was young once. Just as handsome, too.',
+  'A tidy gravel is a happy gravel.',
+  'Share the water. There\'s plenty to go round.',
+  'Puffing up won\'t make you bigger. Just rounder.',
+  'Good friends check the feeding history.',
+  'Hurrying is for currents, not for crabs.',
+  'Some days you\'re the bubble, some days the pebble.',
+  'Be gentle with the new ones. We all plopped in once.',
+  'A wave of the claw costs nothing.',
+  'Nobody ever got lost going round in circles. That\'s the trick.',
+  'Keep your spectacles clean and your heart open.',
+  'Mind the glass. It\'s closer than it looks.',
+  'You can\'t rush a good mustache.',
+  'Rest when you\'re tired. Swim when you\'re not.',
+  'The best seat in the bowl is next to a friend.',
+  'Small fins, big hearts.',
+  'A bowl is only as happy as its least-fed fish.'
+];
+
+// Barnaby's most important thing to say right now, or null when all is
+// well (then he may share some wisdom instead). Worked out on every phone
+// from the shared fish data, so every phone agrees.
+// Priority: rescue > overfeeding warning > welcome or farewell > birthday > hunger.
+// `fishList` is every fish in the bowl, each with its `id` (dead ones too).
+export function crabTip(fishList, crab, now) {
+  return crabTips(fishList, crab, now)[0] ?? null;
+}
+
+// Every tip that applies right now, most important first. The app goes down
+// this list, skipping tips it said recently.
+export function crabTips(fishList, crab, now) {
+  const fresh = (at) => at != null && now - at >= 0 && now - at < TIP_RECENT_MS;
+  const all = fishList || [];
+  const living = all.filter((f) => isAlive(f, now));
+  const full = (f) => currentFullness(f, now);
+  const tip = (kind, f, text) => ({ kind, fishId: f ? f.id : null, name: f ? f.name : null, text });
+  const tips = [];
+
+  // 1. He just saved someone.
+  for (const f of living) if (fresh(f.rescuedAt)) tips.push(tip('rescue', f, `Not on my watch, ${f.name}!`));
+
+  // 2. About to pop: 1 feed away is a stop sign, 2 is a gentle warning.
+  const stuffed = living
+    .map((f) => ({ f, away: feedsUntilPop(full(f)) }))
+    .filter((x) => x.away <= 2)
+    .sort((a, b) => a.away - b.away || full(b.f) - full(a.f) || a.f.addedAt - b.f.addedAt);
+  for (const { f, away } of stuffed) {
+    tips.push(away === 1 ? tip('stop', f, `Easy now, ${f.name}'s had plenty!`) : tip('full', f, `${f.name}'s getting full, go gently.`));
+  }
+
+  // 3. Hello and goodbye, newest first.
+  const news = [
+    ...living.filter((f) => fresh(f.addedAt)).map((f) => ({ at: f.addedAt, t: tip('welcome', f, `Welcome to the bowl, ${f.name}!`) })),
+    ...all.filter((f) => f.diedAt != null && fresh(f.diedAt)).map((f) => ({ at: f.diedAt, t: tip('farewell', f, `Rest easy, ${f.name}.`) }))
+  ].sort((a, b) => b.at - a.at);
+  tips.push(...news.map((x) => x.t));
+
+  // 4. Twelve-hour birthdays.
+  for (const f of living) {
+    if (fresh(f.addedAt + PARTY_HAT_HOURS * 3600000)) tips.push(tip('birthday', f, `Twelve hours! Well done, ${f.name}.`));
+  }
+
+  // 5. Hungry fish, hungriest first.
+  const hungry = living.filter((f) => full(f) < 20).sort((a, b) => full(a) - full(b) || a.addedAt - b.addedAt);
+  if (hungry.length && !snackReady(crab, now)) {
+    tips.push(tip('nosnack', hungry[0], `I've no snack left today — someone feed ${hungry[0].name}!`));
+  }
+  if (living.length >= 2 && living.every((f) => full(f) < 30)) tips.push(tip('allhungry', null, 'Someone feed these youngsters!'));
+  if (hungry.length) tips.push(tip('hungry', hungry[0], `${hungry[0].name}'s looking peckish.`));
+
+  return tips;
+}
+
+// ---------------------------------------------------------------------------
 // Words for the screen
 // ---------------------------------------------------------------------------
 
 export function describeFeed(entry) {
+  if (entry.rescue) return `🦀 ${CRAB_NAME} saved ${entry.fishName || 'a fish'}`;
   return entry.fishId == null ? `${entry.by} fed everyone` : `${entry.by} fed ${entry.fishName || 'a fish'}`;
 }
 

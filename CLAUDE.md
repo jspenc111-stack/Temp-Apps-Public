@@ -4,7 +4,7 @@ This repo holds several small apps, each in its own folder: `fishbowlapp/` (Fish
 
 Row Tracker (`knittingapp/`) has its own rules in `knittingapp/CLAUDE.md`.
 
-A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (max 15), and feed them. Overfeeding or starving kills fish. Static site on GitHub Pages; shared data in Firebase Firestore with Anonymous Auth. **`fishbowlapp/SPEC.md` is the source of truth for behavior.**
+A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (max 15), and feed them. Overfeeding or starving kills fish; Old Barnaby the crab saves one starving fish every 24 hours. Static site on GitHub Pages; shared data in Firebase Firestore with Anonymous Auth. **`fishbowlapp/SPEC.md` is the source of truth for behavior.**
 
 ## About the owner
 - Not a developer. Explain changes in plain language, and define any technical term the first time you use it.
@@ -33,6 +33,6 @@ Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/fishbowlapp/
 5. **Rules changes need a manual step.** If `firestore.rules` changes, start the PR description with: "⚠️ After merging, copy the new firestore.rules into Firebase → Firestore Database → Rules → Publish."
 6. **Web changes:** bump the cache name in `sw.js` (e.g. `fishbowl-v3` → `fishbowl-v4`) so installed apps pick up new files.
 7. **Least privilege.** Don't loosen `firestore.rules`, add Firebase products, or add third-party services without explaining why in the PR. Never allow listing all rooms.
-8. **Keep database use small.** Don't sync fish swimming positions or write on a timer; only write when someone adds, feeds, or a death/cleanup is recorded.
+8. **Keep database use small.** Don't sync fish swimming positions (or Barnaby's) or write on a timer; only write when someone adds, feeds, sends a heart, or a death, rescue, or cleanup is recorded.
 9. **Small PRs.** One feature or fix per PR, with a clear title.
-10. **Firestore rules have a budget.** Firestore stops after 1000 checks per request, so keep per-fish and per-log-entry checks small, and test a completely full bowl (15 fish, 20 log entries, 10 hearts, 30 blame-board players, max-length names) against the Firestore emulator after changing `firestore.rules`.
+10. **Firestore rules have a budget.** Firestore stops after 1000 checks per request, so keep per-fish and per-log-entry checks small, and test a completely full bowl (15 fish, 20 log entries, 10 hearts, 30 blame-board players, a rescue being recorded, max-length names) against the Firestore emulator after changing `firestore.rules`.

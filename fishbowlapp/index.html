@@ -26,7 +26,7 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js" crossorigin>
 </head>
 <body>
-  <canvas id="scene" aria-label="The fishbowl. Tap a fish to select it."></canvas>
+  <canvas id="scene" aria-label="The fishbowl. Tap a fish to select it, or tap Old Barnaby the crab."></canvas>
 
   <!-- First open: create or join -->
   <section id="welcome" class="welcome" hidden>
@@ -78,11 +78,21 @@
       <div class="fc-head"><span id="fcSwatch" class="swatch"></span><span id="fcName"></span></div>
       <div class="meter"><div id="fcBar" class="meter-fill"></div></div>
       <div class="fc-row"><span id="fcPct"></span><span id="fcMood"></span></div>
+      <div id="fcSaved" class="fc-saved" hidden>Saved by Barnaby 🦀</div>
       <div id="fcWarn" class="fc-warn" hidden></div>
       <div class="fc-actions">
         <button id="fcFeed" class="btn btn-feed small">Feed this fish</button>
         <button id="fcLove" class="btn small love-small" aria-label="Send love to this fish">❤️</button>
       </div>
+    </div>
+
+    <!-- Old Barnaby the crab: his speech bubble and his card -->
+    <div id="crabSay" class="crab-say" role="status" hidden></div>
+    <div id="crabCard" class="fish-card crab-card" hidden>
+      <div class="fc-head">🦀 Old Barnaby</div>
+      <div class="crab-sub">Bowl elder · Been here forever</div>
+      <div id="ccSnack" class="crab-snack"></div>
+      <div id="ccWisdom" class="crab-wisdom"></div>
     </div>
 
     <footer class="controls">

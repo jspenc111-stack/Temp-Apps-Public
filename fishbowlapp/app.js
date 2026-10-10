@@ -998,9 +998,14 @@ function startDeath(sim, cause, announce) {
   sim.deathY = sim.y;
   sim.held = null;
   sim.pending = 0;
-  meals = meals.filter((m) => m.fishId !== sim.id);
+  sim.rescue = null;
+  for (const m of meals) if (m.fishId === sim.id) m.fishId = null;   // left over: they sink for Barnaby to tidy
   if (selectedId === sim.id) deselect();
-  if (announce) toast(R.deathMessage(sim.data.name, cause, sim.data.blame));
+  if (announce) {
+    toast(R.deathMessage(sim.data.name, cause, sim.data.blame));
+    crab.sadUntil = performance.now() + 3500;      // Barnaby lowers his eyes
+    crabLookAt(sim, 3500);
+  }
 }
 
 // Flakes: just above one fish, or spread across the surface for everyone.
@@ -1020,6 +1025,16 @@ function dropFlakes(targets, spread) {
     });
     ripples.push({ x, y: BOWL.WATER_Y, age: 0, life: 0.5, size: 0.03, surface: true });
   });
+  // A few flakes nobody eats: they sink to the gravel, and Barnaby tidies them up.
+  if (targets.length && Math.random() < (spread ? 0.7 : 0.35)) {
+    meals.push({
+      fishId: null, x: rand(-hw, hw) * 0.85, y: BOWL.WATER_Y + 0.02, vy: rand(0.06, 0.09), born: performance.now(),
+      flakes: Array.from({ length: 3 }, () => ({
+        dx: rand(-0.03, 0.03), dy: rand(-0.015, 0.015), r: rand(0.009, 0.014), rot: rand(0, Math.PI),
+        c: pick(['#c0392b', '#e67e22', '#d35400', '#f1c40f', '#8e5a2a'])
+      }))
+    });
+  }
 }
 
 // Reaching the food: the flake disappears into its mouth, a gulp, and then
@@ -1095,6 +1110,7 @@ function updateSim(sim, dt, now, perf) {
     sim.fshow += sim.fvel * h;
   }
   if (isPlopping(sim, perf) && sim.state === 'alive') { updatePlop(sim, dt, perf); return; }
+  if (sim.rescue && sim.state === 'alive') { updateRescue(sim, dt, perf); return; }
   if (isPopping(sim)) {
     sim.x += Math.sin(perf / 30) * 0.02 * dt;
     if (perf - sim.deathAt > POP_MS) {
@@ -1219,19 +1235,29 @@ function updateSim(sim, dt, now, perf) {
 
 function updateMeals(dt, perf) {
   for (const m of meals) {
-    const floor = (castleTopAt(m.x) ?? BOWL.GRAVEL_Y) - 0.03;   // flakes can land on the castle
-    if (m.y < floor) m.y = Math.min(floor, m.y + m.vy * dt);
-    m.x += Math.sin(perf / 600 + m.born) * 0.01 * dt;
+    const top = castleTopAt(m.x);
+    const floor = (top ?? BOWL.GRAVEL_Y) - 0.03;   // flakes can land on the castle
+    if (m.y < floor) {
+      m.y = Math.min(floor, m.y + m.vy * dt);
+      m.x += Math.sin(perf / 600 + m.born) * 0.01 * dt;
+    } else if (m.fishId == null && !m.landedAt) {
+      m.landedAt = perf;
+      m.onGravel = top == null;
+    }
   }
+  // Leftovers Barnaby can't reach (on the castle, or out by the glass) melt away.
+  meals = meals.filter((m) => !(m.landedAt && !m.taken && perf - m.landedAt > (m.onGravel ? 90000 : 20000)));
 }
 
 function drawMeals(perf) {
   for (const m of meals) {
-    for (const f of m.flakes) {
+    const left = 1 - (m.eaten || 0);                          // Barnaby nibbling them away
+    for (const [i, f] of m.flakes.entries()) {
+      if (i >= Math.ceil(left * m.flakes.length)) continue;
       const [px, py] = toPx(m.x + f.dx, m.y + f.dy);
       ctx.save();
       ctx.translate(px, py);
-      ctx.rotate(f.rot + perf / 1500);
+      ctx.rotate(f.rot + (m.landedAt ? 0 : perf / 1500));
       ctx.fillStyle = f.c;
       const s = f.r * G.R;
       ctx.fillRect(-s, -s * 0.5, s * 2, s);
@@ -1344,6 +1370,541 @@ function drawFish(sim, now, perf) {
 }
 
 // ---------------------------------------------------------------------------
+// Old Barnaby, the crab. The same in every bowl, so each phone draws and
+// moves him itself; nothing about him is saved except his daily rescue
+// (room.crab). What he says comes from R.crabTips, worked out from the
+// shared fish data.
+// ---------------------------------------------------------------------------
+const CRAB_FEET_Y = BOWL.GRAVEL_Y + 0.025;   // where his feet touch the gravel
+const CRAB_RANGE = 0.62;                     // how far left and right he walks
+const CRAB_SPEED = 0.06;                     // unhurried
+const CRAB_SCUTTLE = 0.22;                   // when there's somewhere to be
+const CRAB_CLIMB = 0.05;
+const TOWER_SIDE_X = CASTLE.x1 + 0.075;      // he climbs the outside of the right tower
+const TOWER_TOP_X = (CASTLE.towerR.x0 + CASTLE.towerR.x1) / 2;
+const TOWER_SEAT_Y = CASTLE.towerR.top - 0.026;
+const BUBBLE_MS = 5000;                      // a speech bubble stays this long
+const BUBBLE_GAP_MS = 20000;                 // at most one bubble every 20 seconds
+// After saying something, wait this long before saying it again.
+const TIP_REPEAT_MS = { rescue: 60e3, welcome: 60e3, farewell: 60e3, birthday: 60e3, stop: 180e3, full: 240e3, nosnack: 300e3, allhungry: 300e3, hungry: 300e3 };
+
+const crab = {
+  x: 0.34, feetY: CRAB_FEET_Y, onCastle: false,
+  path: [],            // where he's walking: [{ x, y, speed, onCastle, offCastle }]
+  task: null,          // { kind: 'tidy' | 'welcome' | 'rescue', ... }
+  restUntil: 0, moving: false, walkPhase: 0,
+  pose: 'rest', poseUntil: 0, sadUntil: 0, holding: false,
+  lookX: 0, lookY: 0, glance: null, glanceUntil: 0,
+  blinkAt: 2000, blinkStart: -1e9,
+  pelletX: 0.17, pelletSide: -1
+};
+let quietCrab = false;         // "Quiet Barnaby" (set from local storage at boot)
+let lastBubbleAt = -1e9;
+let bubbleUntil = 0;
+let nextWisdomAt = 30000;      // first saying about half a minute in, then every few minutes
+const saidAt = new Map();      // tip key → when he last said it
+let crabCardAt = 0;            // when his card was opened (0 = closed)
+
+// He's drawn behind the fish (they swim over him) and behind the castle
+// (he can stroll behind it, or sit on top).
+const crabOnGround = () => !crab.onCastle && Math.abs(crab.feetY - CRAB_FEET_Y) < 0.002;
+// A spot on the gravel he can stand on (not hidden behind the castle).
+function crabSpot(x) {
+  x = clamp(x, -CRAB_RANGE, CRAB_RANGE);
+  if (x > CASTLE.x0 - 0.1 && x < CASTLE.x1 + 0.1) x = x < castleCenter ? CASTLE.x0 - 0.1 : CASTLE.x1 + 0.1;
+  return x;
+}
+const castleUp = (speed = CRAB_CLIMB) => [
+  { x: TOWER_SIDE_X, y: CRAB_FEET_Y },
+  { x: TOWER_SIDE_X, y: TOWER_SEAT_Y, speed },
+  { x: TOWER_TOP_X, y: TOWER_SEAT_Y, onCastle: true }
+];
+const castleDown = (speed = CRAB_CLIMB) => [
+  { x: TOWER_SIDE_X, y: TOWER_SEAT_Y, speed },
+  { x: TOWER_SIDE_X, y: CRAB_FEET_Y, speed, offCastle: true }
+];
+// Walk to a spot on the gravel, climbing down first if he's on the castle.
+function crabGoTo(x, speed = CRAB_SPEED) {
+  crab.path = [...(crab.onCastle || !crabOnGround() ? castleDown(Math.max(speed, CRAB_CLIMB)) : []), { x: crabSpot(x), y: CRAB_FEET_Y, speed }];
+}
+function setPose(pose, ms) {
+  crab.pose = pose;
+  crab.poseUntil = performance.now() + ms;
+}
+function crabLookAt(sim, ms = 2500) {
+  crab.glance = sim;
+  crab.glanceUntil = performance.now() + ms;
+}
+function dropTask() {
+  if (crab.task && crab.task.meal) crab.task.meal.taken = false;
+  crab.task = null;
+  crab.holding = false;
+}
+
+// Nothing to do: tidy up flakes on the gravel, wander, or go sit on the castle.
+function crabIdle(perf) {
+  // (He can reach flakes up to a little past where he can stand; not ones behind the castle.)
+  const flake = meals.find((m) => m.fishId == null && m.onGravel && !m.taken && Math.abs(crabSpot(m.x) - m.x) < 0.06);
+  if (flake) {
+    flake.taken = true;
+    crab.task = { kind: 'tidy', meal: flake };
+    crabGoTo(flake.x);
+    return;
+  }
+  if (crab.onCastle) { crab.path = castleDown(); return; }
+  if (Math.random() < 0.15) { crab.path = castleUp(); return; }
+  let x = crab.x;
+  for (let i = 0; i < 6 && Math.abs(x - crab.x) < 0.15; i++) x = crabSpot(rand(-CRAB_RANGE, CRAB_RANGE));
+  crab.path = [{ x, y: CRAB_FEET_Y, speed: CRAB_SPEED }];
+}
+
+function updateCrab(dt, now, perf) {
+  const c = crab;
+  c.moving = false;
+  const task = c.task;
+  if (task && task.kind === 'tidy') {
+    const m = task.meal;
+    if (!meals.includes(m)) dropTask();
+    else if (!c.path.length) {
+      if (!task.nibbleAt) { task.nibbleAt = perf; setPose('nibble', 1700); }
+      m.eaten = clamp((perf - task.nibbleAt) / 1500, 0, 1);
+      if (m.eaten >= 1) {
+        meals = meals.filter((x) => x !== m);
+        c.task = null;
+        c.restUntil = perf + rand(1500, 3500);
+      }
+    }
+  } else if (task && task.kind === 'welcome') {
+    const s = sims.get(task.simId);
+    if (s) crabLookAt(s, 500);
+    if (!c.path.length && !task.waved) { task.waved = true; setPose('wave', 2200); task.until = perf + 2400; }
+    if (!s || (task.waved && perf > task.until) || perf > task.giveUpAt) { c.task = null; c.restUntil = perf + rand(1500, 3000); }
+  } else if (task && task.kind === 'rescue') {
+    const s = sims.get(task.simId);
+    if (!s || !s.rescue) dropTask();
+    else { c.holding = true; crabLookAt(s, 500); }
+  }
+
+  const wp = c.path[0];
+  if (wp) {
+    const speed = wp.speed || CRAB_SPEED;
+    const dx = wp.x - c.x, dy = wp.y - c.feetY;
+    const d = Math.hypot(dx, dy);
+    if (d <= speed * dt) {
+      c.x = wp.x; c.feetY = wp.y;
+      c.path.shift();
+      if (wp.onCastle) c.onCastle = true;
+      if (wp.offCastle) c.onCastle = false;
+      if (!c.path.length && !c.task) c.restUntil = perf + (c.onCastle ? rand(15000, 30000) : rand(2000, 6000));
+    } else {
+      c.x += (dx / d) * speed * dt;
+      c.feetY += (dy / d) * speed * dt;
+      c.moving = true;
+    }
+    c.walkPhase += dt * 13 * Math.sqrt(speed / CRAB_SPEED);
+  } else if (!c.task && perf > c.restUntil) {
+    crabIdle(perf);
+  }
+  // The snack pellet sits beside him on the gravel (he nudges it along),
+  // on whichever side isn't hidden by a plant or the castle.
+  if (crabOnGround()) {
+    const clear = (x) => Math.abs(x) < 0.66 && !(x > CASTLE.x0 - 0.04 && x < CASTLE.x1 + 0.04) && plants.every((pl) => Math.abs(x - pl.x) > 0.1);
+    if (!clear(c.x + c.pelletSide * 0.17) && clear(c.x - c.pelletSide * 0.17)) c.pelletSide *= -1;
+    c.pelletX = lerp(c.pelletX, c.x + c.pelletSide * 0.17, clamp(dt * 3, 0, 1));
+  }
+
+  // Where he's looking: whatever he's paying attention to, or around.
+  let lx, ly;
+  if (crabCardAt) { lx = c.x; ly = c.feetY - 0.06; }                       // at you
+  else if (c.glance && perf < c.glanceUntil && sims.has(c.glance.id)) { lx = c.glance.x; ly = c.glance.y; }
+  else {
+    if (perf > c.glanceUntil) {
+      const fish = [...sims.values()].filter((s) => s.state === 'alive');
+      c.glance = fish.length && Math.random() < 0.6 ? pick(fish) : { id: null, x: rand(-0.7, 0.7), y: rand(-0.3, 0.55) };
+      c.glanceUntil = perf + rand(2000, 4500);
+    }
+    lx = c.glance.x; ly = c.glance.y;
+  }
+  c.lookX = lerp(c.lookX, lx, clamp(dt * 4, 0, 1));
+  c.lookY = lerp(c.lookY, ly, clamp(dt * 4, 0, 1));
+  if (perf > c.blinkAt) { c.blinkStart = perf; c.blinkAt = perf + rand(2500, 6500); }
+}
+
+// His claws: where each one is (relative to his shell, in bowl radii) and
+// how open. side = 1 is his right claw (on the right of the screen).
+function clawPose(side, perf) {
+  const t = perf / 1000;
+  const pose = crab.holding ? 'hold'
+    : crab.task && crab.task.kind === 'tidy' && crab.task.nibbleAt ? 'nibble'
+    : perf < crab.poseUntil ? crab.pose : perf < crab.sadUntil ? 'sad' : 'rest';
+  const rest = { x: 0.105, y: 0.0, a: -0.35, open: 0.25 + 0.08 * Math.sin(t * 1.7 + side) };
+  if (pose === 'wave' && side > 0) return { x: 0.12, y: -0.105, a: -0.2 + Math.sin(t * 11) * 0.45, open: 0.45 };
+  if (pose === 'stop' && side > 0) return { x: 0.115, y: -0.125, a: 0.05, open: 0.08 };
+  if (pose === 'caution' && side > 0) return { x: 0.12, y: -0.075, a: -0.1, open: 0.12 };
+  if (pose === 'hold' && side > 0) return { x: 0.1, y: -0.115, a: 0, open: 0.4, pellet: true };
+  if (pose === 'clap') { const k = Math.abs(Math.sin(t * 9)); return { x: 0.035 + 0.05 * k, y: -0.065, a: -0.5, open: 0.15 }; }
+  if (pose === 'nibble') { const k = Math.sin(t * 10 + (side > 0 ? 0 : Math.PI)) > 0; return k ? { x: 0.028, y: -0.012, a: -1.1, open: 0.35 } : rest; }
+  if (pose === 'sad') return { x: 0.1, y: 0.018, a: -0.6, open: 0.04 };
+  return rest;
+}
+
+function drawPellet(px, py, r, perf, sparkle) {
+  ctx.save();
+  // A soft glow, so it stands out from the pebbles
+  const glow = ctx.createRadialGradient(px, py, r * 0.5, px, py, r * 2.4);
+  glow.addColorStop(0, `rgba(255, 220, 120, ${0.4 + 0.12 * Math.sin(perf / 500)})`);
+  glow.addColorStop(1, 'rgba(255, 220, 120, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(px, py, r * 2.4, 0, Math.PI * 2); ctx.fill();
+  const g = ctx.createRadialGradient(px - r * 0.35, py - r * 0.4, r * 0.15, px, py, r);
+  g.addColorStop(0, '#ffe39a');
+  g.addColorStop(0.55, '#f0a43a');
+  g.addColorStop(1, '#a8561a');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(px, py, r, r * 0.85, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(90, 140, 60, 0.6)';      // a few green bits: it's a proper fish snack
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(px + Math.cos(i * 2.2) * r * 0.45, py + Math.sin(i * 2.2) * r * 0.35, r * 0.16, 0, Math.PI * 2); ctx.fill(); }
+  if (sparkle) {
+    const k = (perf % 3200) / 3200;
+    if (k < 0.25) {
+      const a = Math.sin(k / 0.25 * Math.PI), s = r * 0.9 * a;
+      ctx.fillStyle = `rgba(255, 250, 210, ${0.9 * a})`;
+      ctx.beginPath();
+      const sx = px + r * 0.6, sy = py - r * 0.9;
+      ctx.moveTo(sx, sy - s); ctx.lineTo(sx + s * 0.25, sy); ctx.lineTo(sx, sy + s); ctx.lineTo(sx - s * 0.25, sy); ctx.closePath();
+      ctx.moveTo(sx - s, sy); ctx.lineTo(sx, sy + s * 0.25); ctx.lineTo(sx + s, sy); ctx.lineTo(sx, sy - s * 0.25); ctx.closePath();
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawCrab(now, perf) {
+  const c = crab;
+  const S = (v) => v * G.R;
+  const [fx, fy] = toPx(c.x, c.feetY);
+  const bob = c.moving ? Math.abs(Math.sin(c.walkPhase)) * S(0.005) : Math.sin(perf / 900) * S(0.0015);
+  const rx = S(0.075), ry = S(0.05);
+  const bx = fx, by = fy - S(0.062) - bob;
+  const sad = perf < c.sadUntil && !c.holding;
+  const shellTop = '#ff9a66', shellMid = '#e8592f', shellLow = '#a9341a', legColor = '#b63f1f';
+
+  // Emergency snack beside him while it's ready.
+  const snackReady = R.snackReady(room && room.crab, now) && !c.holding;
+  ctx.save();
+  if (snackReady) {
+    const [ppx, ppy] = toPx(c.pelletX, CRAB_FEET_Y - 0.02);
+    ctx.fillStyle = 'rgba(20, 12, 6, 0.3)';
+    ctx.beginPath(); ctx.ellipse(ppx, ppy + S(0.019), S(0.026), S(0.007), 0, 0, Math.PI * 2); ctx.fill();
+    drawPellet(ppx, ppy, S(0.024), perf, true);
+  }
+
+  // Shadow
+  if (crabOnGround()) {
+    ctx.fillStyle = 'rgba(20, 12, 6, 0.28)';
+    ctx.beginPath(); ctx.ellipse(fx, fy + S(0.004), rx * 1.55, S(0.013), 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Legs: three on each side, pattering when he walks (tucked in on the narrow tower top).
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const spread = c.onCastle ? 0.55 : 1;
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const hipX = bx + side * rx * (0.5 + i * 0.17), hipY = by + ry * (0.25 + i * 0.12);
+      const phase = c.walkPhase + i * 2.1 + (side > 0 ? Math.PI : 0);
+      const lift = c.moving ? Math.max(0, Math.sin(phase)) : 0;
+      const footX = bx + side * (S((0.088 + i * 0.022) * spread) + (c.moving ? Math.cos(phase) * S(0.008) : 0));
+      const footY = fy - lift * S(0.013);
+      const kneeX = (hipX + footX) / 2 + side * S(0.014);
+      const kneeY = Math.min(hipY, footY) - S(0.026) - lift * S(0.006);
+      ctx.strokeStyle = legColor;
+      ctx.lineWidth = Math.max(1.6, S(0.012));
+      ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kneeX, kneeY); ctx.lineTo(footX, footY); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 180, 140, 0.45)';
+      ctx.lineWidth = Math.max(0.7, S(0.004));
+      ctx.beginPath(); ctx.moveTo(hipX, hipY - 1); ctx.lineTo(kneeX, kneeY - 1); ctx.stroke();
+    }
+  }
+
+  // Arms and claws (behind the shell's edge, in front of the legs)
+  const claws = [-1, 1].map((side) => ({ side, ...clawPose(side, perf) }));
+  for (const cl of claws) {
+    const sx = bx + cl.side * rx * 0.72, sy = by - ry * 0.05;
+    const cx = bx + cl.side * S(cl.x), cy = by + S(cl.y);
+    const ex = (sx + cx) / 2 + cl.side * S(0.02), ey = Math.max(sy, cy) + S(0.008);
+    ctx.strokeStyle = legColor;
+    ctx.lineWidth = Math.max(2, S(0.016));
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.lineTo(cx, cy); ctx.stroke();
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(cl.side, 1);
+    ctx.rotate(cl.a);
+    const cg = ctx.createLinearGradient(0, -S(0.05), 0, S(0.025));
+    cg.addColorStop(0, shellTop); cg.addColorStop(0.6, shellMid); cg.addColorStop(1, shellLow);
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.ellipse(0, 0, S(0.026), S(0.021), 0, 0, Math.PI * 2); ctx.fill();
+    // Two pincer fingers pointing up, opening apart
+    for (const [dx, rot] of [[-S(0.01), -cl.open * 0.9], [S(0.011), cl.open * 0.35]]) {
+      ctx.save();
+      ctx.translate(dx, -S(0.012));
+      ctx.rotate(rot);
+      ctx.beginPath();
+      ctx.moveTo(-S(0.01), 0);
+      ctx.quadraticCurveTo(-S(0.012), -S(0.026), S(0.001), -S(0.038));
+      ctx.quadraticCurveTo(S(0.011), -S(0.024), S(0.009), 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.ellipse(-S(0.008), -S(0.006), S(0.008), S(0.005), -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (cl.pellet) drawPellet(cx + cl.side * S(0.002), cy - S(0.045), S(0.022), perf, false);
+  }
+
+  // Eye stalks (behind the shell top)
+  const look = (ex, ey) => {
+    const [tx, ty] = toPx(c.lookX, c.lookY);
+    const d = Math.hypot(tx - ex, ty - ey) || 1;
+    return [((tx - ex) / d) * S(0.006), ((ty - ey) / d) * S(0.005)];
+  };
+  const stalk = sad ? 0.03 : 0.044;
+  const eyes = [-1, 1].map((side) => {
+    const baseX = bx + side * S(0.022), baseY = by - ry * 0.8;
+    const sway = Math.sin(perf / 700 + side) * S(0.002);
+    return { side, baseX, baseY, x: baseX + side * S(0.008) + sway, y: baseY - S(stalk) };
+  });
+  ctx.strokeStyle = legColor;
+  ctx.lineWidth = Math.max(1.6, S(0.009));
+  for (const e of eyes) { ctx.beginPath(); ctx.moveTo(e.baseX, e.baseY); ctx.quadraticCurveTo(e.baseX + e.side * S(0.004), (e.baseY + e.y) / 2, e.x, e.y); ctx.stroke(); }
+
+  // Shell
+  const g = ctx.createRadialGradient(bx - rx * 0.35, by - ry * 0.55, ry * 0.15, bx, by, rx * 1.1);
+  g.addColorStop(0, shellTop); g.addColorStop(0.55, shellMid); g.addColorStop(1, shellLow);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(bx - rx, by + ry * 0.15);
+  ctx.bezierCurveTo(bx - rx, by - ry * 1.25, bx + rx, by - ry * 1.25, bx + rx, by + ry * 0.15);
+  ctx.bezierCurveTo(bx + rx * 0.8, by + ry * 0.95, bx - rx * 0.8, by + ry * 0.95, bx - rx, by + ry * 0.15);
+  ctx.fill();
+  // Little bumps along the shell's edge
+  for (const side of [-1, 1]) {
+    for (const k of [0.62, 0.86]) {
+      ctx.beginPath(); ctx.arc(bx + side * rx * k, by - ry * (k > 0.8 ? 0.15 : 0.55), S(0.006), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.fillStyle = 'rgba(120, 30, 10, 0.25)';      // freckles
+  for (const [sx, sy, sr] of [[-0.45, -0.1, 0.009], [0.5, -0.2, 0.007], [0.15, 0.35, 0.006], [-0.2, 0.45, 0.005]]) {
+    ctx.beginPath(); ctx.arc(bx + rx * sx, by + ry * sy, S(sr), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255, 235, 215, 0.35)';    // shine
+  ctx.beginPath(); ctx.ellipse(bx - rx * 0.4, by - ry * 0.5, rx * 0.28, ry * 0.18, -0.4, 0, Math.PI * 2); ctx.fill();
+
+  // White mustache and a small smile (or frown)
+  ctx.fillStyle = '#f7f3ea';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(bx, by - S(0.004));
+    ctx.bezierCurveTo(bx + side * S(0.018), by - S(0.02), bx + side * S(0.042), by - S(0.014), bx + side * S(0.05), by + S(0.002));
+    ctx.bezierCurveTo(bx + side * S(0.044), by - S(0.002), bx + side * S(0.034), by + S(0.002), bx + side * S(0.028), by + S(0.004));
+    ctx.bezierCurveTo(bx + side * S(0.018), by + S(0.006), bx + side * S(0.008), by + S(0.002), bx, by + S(0.002));
+    ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(70, 15, 5, 0.75)';
+  ctx.lineWidth = Math.max(1, S(0.004));
+  ctx.beginPath();
+  if (sad) ctx.arc(bx, by + S(0.022), S(0.01), 1.15 * Math.PI, 1.85 * Math.PI);
+  else ctx.arc(bx, by + S(0.006), S(0.011), 0.2 * Math.PI, 0.8 * Math.PI);
+  ctx.stroke();
+
+  // Eyes with tiny round spectacles and bushy white eyebrows
+  const blinking = perf - c.blinkStart < 140;
+  for (const e of eyes) {
+    const er = S(0.0125);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(e.x, e.y, er, 0, Math.PI * 2); ctx.fill();
+    const [ox, oy] = look(e.x, e.y);
+    ctx.fillStyle = '#1b120c';
+    ctx.beginPath(); ctx.arc(e.x + ox, e.y + oy + (sad ? S(0.003) : 0), er * 0.5, 0, Math.PI * 2); ctx.fill();
+    if (blinking || sad) {
+      ctx.fillStyle = shellMid;
+      ctx.beginPath();
+      if (blinking) ctx.arc(e.x, e.y, er + 0.5, 0, Math.PI * 2);
+      else { ctx.arc(e.x, e.y, er + 0.5, Math.PI, 0); ctx.closePath(); }
+      ctx.fill();
+    }
+    // Spectacles
+    ctx.fillStyle = 'rgba(210, 235, 255, 0.18)';
+    ctx.strokeStyle = '#3b2a1a';
+    ctx.lineWidth = Math.max(1, S(0.0035));
+    ctx.beginPath(); ctx.arc(e.x, e.y, S(0.018), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.arc(e.x, e.y, S(0.013), 1.1 * Math.PI, 1.4 * Math.PI); ctx.stroke();
+    // Eyebrows: a few white tufts, drooping when sad
+    ctx.strokeStyle = '#f7f3ea';
+    ctx.lineWidth = Math.max(1.3, S(0.0055));
+    for (let k = 0; k < 3; k++) {
+      const x0 = e.x + e.side * S(-0.016 + k * 0.012);
+      const tilt = sad ? -e.side * S(0.006) * (k - 1) : e.side * S(0.003) * (k - 1);
+      const y0 = e.y - S(0.022) + tilt;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + e.side * S(0.01), y0 - S(sad ? 0.002 : 0.007)); ctx.stroke();
+    }
+  }
+  // Bridge of the spectacles
+  ctx.strokeStyle = '#3b2a1a';
+  ctx.lineWidth = Math.max(1, S(0.0035));
+  ctx.beginPath();
+  ctx.moveTo(eyes[0].x + S(0.018), eyes[0].y);
+  ctx.quadraticCurveTo((eyes[0].x + eyes[1].x) / 2, Math.min(eyes[0].y, eyes[1].y) - S(0.008), eyes[1].x - S(0.018), eyes[1].y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// The rescue, as it happens: the starving fish sinks, Barnaby scuttles over
+// holding up his snack, the fish gulps it and its color floods back.
+function startRescue(sim) {
+  sim.rescue = { start: performance.now(), x: crabSpot(sim.x) };
+  sim.held = 0;                 // looks starving until it eats
+  sim.pending = 0;
+  sim.pendingDeath = null;
+  sim.route = null;
+  meals = meals.filter((m) => m.fishId !== sim.id);
+  dropTask();
+  crab.task = { kind: 'rescue', simId: sim.id };
+  crabGoTo(sim.rescue.x, CRAB_SCUTTLE);
+}
+
+function updateRescue(sim, dt, perf) {
+  const r = sim.rescue;
+  const ty = BOWL.GRAVEL_Y - 0.17;
+  sim.x = lerp(sim.x, r.x, clamp(dt * 0.9, 0, 1));
+  sim.y = lerp(sim.y, ty, clamp(dt * 0.7, 0, 1));
+  sim.tilt = lerp(sim.tilt, 0.45, clamp(dt * 2, 0, 1));
+  sim.vx = 0; sim.vy = 0;
+  sim.tail += dt * 2;
+  sim.fin += dt * 2;
+  const crabThere = !crab.path.length && Math.abs(crab.x - r.x) < 0.02;
+  if ((crabThere && Math.abs(sim.y - ty) < 0.05 && perf - r.start > 1500) || perf - r.start > 8000) finishRescue(sim, perf);
+}
+
+function finishRescue(sim, perf) {
+  sim.rescue = null;
+  sim.held = null;              // grows back to its saved fullness
+  sim.puffAt = perf;
+  sim.chompAt = perf;
+  crab.holding = false;
+  crab.task = null;
+  crab.restUntil = perf + 3000;
+  setPose('wave', 1600);
+  for (let i = 0; i < 16; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(0.15, 0.5);
+    particles.push({ kind: 'scale', color: pick(['#ffe27a', '#fff6c2', '#ffd23f']), x: sim.x, y: sim.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(0.006, 0.011), rot: rand(0, 6), vr: rand(-8, 8), age: 0, life: rand(0.8, 1.5), buoyant: true });
+  }
+  sim.scared = 0.8;              // and off it swims
+  [sim.tx, sim.ty] = pickDestination(sim);
+  toast(`🦀 ${R.CRAB_NAME} saved ${sim.data.name}!`);
+  crabSay(`Not on my watch, ${sim.data.name}!`, true);
+  saidAt.set(`rescue:${sim.id}`, Date.now());
+}
+
+// His speech bubble. Returns false if he can't speak right now.
+function crabSay(text, urgent = false) {
+  const perf = performance.now();
+  if (quietCrab || $('bowlUi').hidden) return false;
+  if (!urgent && perf - lastBubbleAt < BUBBLE_GAP_MS) return false;
+  lastBubbleAt = perf;
+  bubbleUntil = perf + BUBBLE_MS;
+  nextWisdomAt = perf + rand(150000, 240000);
+  const el = $('crabSay');
+  el.textContent = text;
+  el.classList.remove('out');
+  el.hidden = false;
+  placeCrabUi(perf);
+  return true;
+}
+function hideBubble() {
+  bubbleUntil = 0;
+  $('crabSay').hidden = true;
+}
+
+// Every second: anything worth saying? Most important first, skipping what
+// he said recently. Reacting (a raised claw) happens even when he's quiet.
+function crabThink(now, perf) {
+  if (!room) return;
+  const fishList = Object.entries(room.fish || {}).map(([id, f]) => ({ id, ...f }));
+  for (const tip of R.crabTips(fishList, room.crab, now)) {
+    if (tip.kind === 'farewell' && sims.get(tip.fishId)?.state === 'alive') continue;   // still finishing its food
+    if (tip.kind === 'rescue') continue;                                             // said when the rescue plays
+    const key = `${tip.kind}:${tip.fishId || ''}`;
+    if (now - (saidAt.get(key) ?? -1e15) < TIP_REPEAT_MS[tip.kind]) continue;
+    if (!quietCrab && !crabSay(tip.text)) return;     // wait for his turn to speak
+    saidAt.set(key, now);
+    const sim = tip.fishId && sims.get(tip.fishId);
+    if (sim) crabLookAt(sim, 3000);
+    if (tip.kind === 'stop') setPose('stop', 3000);
+    if (tip.kind === 'full') setPose('caution', 2500);
+    return;
+  }
+  if (perf > nextWisdomAt) crabSay(pick(R.CRAB_WISDOM));
+}
+
+// Speech bubble and card follow him around. Neither covers the buttons or
+// the selected fish's card.
+function placeCrabUi(perf) {
+  const [px, py] = toPx(crab.x, crab.feetY - 0.17);
+  const say = $('crabSay');
+  if (!say.hidden) {
+    if (perf > bubbleUntil + 400) say.hidden = true;
+    else {
+      say.classList.toggle('out', perf > bubbleUntil);
+      const w = say.offsetWidth, h = say.offsetHeight;
+      const left = clamp(px - w / 2, 12, G.w - w - 12);
+      const top = Math.max(70, py - h - 10);
+      say.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+      say.style.setProperty('--tail', `${Math.round(clamp(px - left, 16, w - 16))}px`);
+      const card = $('fishCard');
+      let covered = crabCardAt > 0;
+      if (!card.hidden) {
+        const a = card.getBoundingClientRect();
+        covered ||= left < a.right && left + w > a.left && top < a.bottom && top + h > a.top;
+      }
+      say.style.visibility = covered ? 'hidden' : 'visible';
+    }
+  }
+  if (crabCardAt) {
+    if (perf - crabCardAt > 7000) { closeCrabCard(); return; }
+    const card = $('crabCard');
+    const w = card.offsetWidth, h = card.offsetHeight;
+    const left = clamp(px - w / 2, 12, G.w - w - 12);
+    const top = Math.max(70, py - h - 12);
+    card.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  }
+}
+
+// Tap Barnaby: who he is, his snack, and a bit of wisdom.
+function openCrabCard() {
+  deselect();
+  crabCardAt = performance.now();
+  $('ccSnack').textContent = R.snackStatus(room && room.crab, Date.now());
+  $('ccWisdom').textContent = `“${pick(R.CRAB_WISDOM)}”`;
+  $('crabCard').hidden = false;
+  if (!crab.task) setPose('wave', 1400);
+  placeCrabUi(crabCardAt);
+}
+function closeCrabCard() {
+  crabCardAt = 0;
+  $('crabCard').hidden = true;
+}
+function hitsCrab(x, y) {
+  const [px, py] = toPx(crab.x, crab.feetY - 0.07);
+  const [tx, ty] = toPx(x, y);
+  return Math.abs(tx - px) < Math.max(40, G.R * 0.15) && Math.abs(ty - py) < Math.max(40, G.R * 0.11);
+}
+
+// ---------------------------------------------------------------------------
 // Frame
 // ---------------------------------------------------------------------------
 function drawDroplets() {
@@ -1371,6 +1932,7 @@ function render(now, perf) {
   drawAirstone();
   drawPlants(t, 0);
   drawMeals(perf);
+  drawCrab(now, perf);        // Barnaby, under the fish
   const order = [...sims.values()].sort((a, b) => (a.state !== 'alive') - (b.state !== 'alive') || (a.id === selectedId) - (b.id === selectedId));
   const inAir = (s) => s.y < BOWL.WATER_Y;
   for (const s of order) if (!inAir(s)) drawFish(s, now, perf);
@@ -1425,6 +1987,8 @@ function fishLife(now, perf) {
     if (!s.hatSeen && R.hasPartyHat(s.data, now)) {
       s.hatSeen = true;
       toast(`🎉 ${s.data.name} is ${R.PARTY_HAT_HOURS} hours old!`);
+      if (!crab.task) setPose('clap', 2200);         // Barnaby claps his claws
+      crabLookAt(s, 2500);
       const colors = ['#ff4f9a', '#ffd23f', '#3b82f6', '#22c55e', '#a24ee8', '#ff7a1a'];
       for (let i = 0; i < 30; i++) {
         const a = rand(-Math.PI, 0), sp = rand(0.3, 0.9);
@@ -1442,10 +2006,11 @@ function tick() {
   lastPerf = perf;
   const now = Date.now();
 
-  checkStarvation(now);
+  checkStarvation(now, perf);
   livingSims = 0;
   for (const s of sims.values()) if (s.state === 'alive') livingSims++;
   for (const s of sims.values()) updateSim(s, dt, now, perf);
+  updateCrab(dt, now, perf);
   fishLife(now, perf);
   for (const [id, s] of sims) if (s.state === 'gone') sims.delete(id);
   updateMeals(dt, perf);
@@ -1453,6 +2018,7 @@ function tick() {
   updateEffects(dt);
   render(now, perf);
   updateCard(now, perf);
+  placeCrabUi(perf);
 
   if (perf - lastSecond > 1000) {
     lastSecond = perf;
@@ -1464,7 +2030,7 @@ function tick() {
 // ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
-const KEYS = { room: 'fishbowl.room', nick: 'fishbowl.nickname', cache: 'fishbowl.cache' };
+const KEYS = { room: 'fishbowl.room', nick: 'fishbowl.nickname', cache: 'fishbowl.cache', quiet: 'fishbowl.quietBarnaby', rescue: 'fishbowl.rescueSeen' };
 function stored(key) { try { return localStorage.getItem(key); } catch { return null; } }
 function store(key, value) {
   try { value == null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* private mode */ }
@@ -1494,6 +2060,32 @@ const heartKey = (h) => `${h.at}|${h.by}|${h.fishId}`;
 const HEART_SHOW_MS = 10000;     // hearts older than this aren't played (e.g. opening the app later)
 let loveReadyAt = 0;             // one heart per phone every 3 seconds
 let housekeepingAt = 0;
+let viewingSince = Infinity;     // since when this phone has been watching the bowl (rescues before that were "while you were away")
+quietCrab = stored(KEYS.quiet) === '1';
+
+// The last of Barnaby's rescues this phone has told you about (per bowl).
+let demoRescueSeen = null;
+function rescueSeen() {
+  if (DEMO) return demoRescueSeen;
+  try {
+    const v = JSON.parse(stored(KEYS.rescue) || 'null');
+    return v && v.code === roomCode ? v.at : null;
+  } catch { return null; }
+}
+function markRescueSeen(at) {
+  if (DEMO) demoRescueSeen = at;
+  else store(KEYS.rescue, JSON.stringify({ code: roomCode, at }));
+}
+
+// A new fish plopped in: Barnaby scuttles toward it and waves a claw.
+function crabWelcome(sim) {
+  if (crab.task && crab.task.kind === 'rescue') return;
+  dropTask();
+  const perf = performance.now();
+  crab.task = { kind: 'welcome', simId: sim.id, giveUpAt: perf + 7000 };
+  if (crabOnGround()) crabGoTo(crab.x + clamp(sim.x - crab.x, -0.35, 0.35), CRAB_SCUTTLE);
+  else crab.path = [];
+}
 
 const logKey = (e) => `${e.at}|${e.by}|${e.fishId}`;
 
@@ -1531,7 +2123,7 @@ function applyRoom(next) {
     const k = logKey(e);
     if (seenLog.has(k)) continue;
     seenLog.add(k);
-    if (now - e.at < 30000) fresh.push(e);
+    if (now - e.at < 30000 && !e.rescue) fresh.push(e);    // rescues play their own scene
   }
   fresh.sort((a, b) => a.at - b.at);
   const drops = [];
@@ -1557,10 +2149,17 @@ function applyRoom(next) {
       sims.set(id, sim);
       if (now - data.addedAt < 60000) {
         toast(DEBUG && data.addedBy !== nickname ? `⏱ ${data.name}: here ${now - data.addedAt} ms after the tap` : `${data.name} the ${R.typeLabel(data)} joined the bowl!`);
+        crabWelcome(sim);
       } else {
         sim.bornAt = -1e9;
       }
       continue;
+    }
+    // Barnaby just saved this fish, while we were watching: play the rescue.
+    if (data.rescuedAt != null && data.rescuedAt !== sim.data.rescuedAt && sim.state === 'alive' && data.rescuedAt >= viewingSince) {
+      markRescueSeen(data.rescuedAt);
+      sim.data = data;
+      startRescue(sim);
     }
     sim.data = data;
     sim.art = Art.artOf(R.typeOf(data));
@@ -1578,7 +2177,21 @@ function applyRoom(next) {
   }
   for (const [targets, spread] of drops) dropFlakes(targets.filter((s) => s.state === 'alive'), spread);
 
-  // 3. New hearts → a burst of hearts rising on every phone.
+  // 3. A rescue we didn't see happen: say so once on this phone.
+  const lastRescue = R.crabOf(next).lastRescueAt;
+  const seen = rescueSeen();
+  if (lastRescue != null && lastRescue > (seen ?? -Infinity)) {
+    markRescueSeen(lastRescue);
+    const f = Object.values(fishMap).find((x) => x.rescuedAt === lastRescue);
+    const e = (next.feedLog || []).find((x) => x.rescue && x.at === lastRescue);
+    const name = (f && f.name) || (e && e.fishName) || 'a fish';
+    // A phone that has never seen this bowl's rescues only hears about a recent one.
+    if (seen != null || now - lastRescue < 24 * 3600e3) {
+      toast(lastRescue < viewingSince ? `🦀 While you were away, ${R.CRAB_NAME} saved ${name}.` : `🦀 ${R.CRAB_NAME} saved ${name}!`);
+    }
+  }
+
+  // 4. New hearts → a burst of hearts rising on every phone.
   for (const h of [...(next.hearts || [])].reverse()) {
     const k = heartKey(h);
     if (seenHearts.has(k)) continue;
@@ -1594,21 +2207,31 @@ function applyRoom(next) {
   if (!$('sheet').hidden && sheetKind === 'board') showBoard();
 }
 
-// Starvation happens by the formula, even with nobody feeding. Every phone
-// does the same sum, so the fish dies everywhere at the same moment.
-function checkStarvation(now) {
+// Starvation happens by the formula, even with nobody feeding. When a fish
+// hits 0, the bowl is worked out again (R.resolveBowl): Barnaby saves it if
+// his snack is ready, otherwise it starves. Every phone does the same sum,
+// so this happens everywhere at the same moment.
+let lastResolveAt = 0;
+function checkStarvation(now, perf) {
+  if (perf - lastResolveAt < 500) return;
   for (const s of sims.values()) {
-    if (s.state === 'alive' && s.data.diedAt == null && R.currentFullness(s.data, now) <= 0) startDeath(s, 'starved', true);
+    if (s.state === 'alive' && !s.rescue && s.data.diedAt == null && R.currentFullness(s.data, now) <= 0) {
+      lastResolveAt = perf;
+      showRoom();
+      return;
+    }
   }
 }
 
 // What to show = the database's copy with my unconfirmed changes on top.
 function showRoom() {
   let r = serverRoom;
+  if (!r) return;
   for (const op of pendingOps) {
     try { r = op.apply(r); } catch { /* no longer applies (e.g. that fish died) */ }
   }
-  if (r) applyRoom(r);
+  // Barnaby's rescues and starvations up to now, even if nobody saved them yet.
+  applyRoom(R.resolveBowl(r, Date.now()).room);
 }
 
 function onServerRoom(data) {
@@ -1636,7 +2259,8 @@ async function runOp(op, send) {
 
 function everySecond(now) {
   if (!room) return;
-  if (R.needsHousekeeping(room, now) && canWrite() && now - housekeepingAt > 15000) {
+  crabThink(now, performance.now());
+  if (serverRoom && R.needsHousekeeping(serverRoom, now) && canWrite() && now - housekeepingAt > 15000) {
     housekeepingAt = now;
     api.housekeeping(roomCode).catch(() => {});
   }
@@ -1647,6 +2271,14 @@ function everySecond(now) {
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
+function resetCrab() {
+  dropTask();
+  crab.path = [];
+  closeCrabCard();
+  hideBubble();
+  saidAt.clear();
+}
+
 function show(screen) {
   $('welcome').hidden = screen !== 'welcome';
   $('bowlUi').hidden = screen !== 'bowl';
@@ -1661,6 +2293,7 @@ function showWelcome(message = '') {
   sims.clear();
   meals = [];
   deselect();
+  resetCrab();
   show('welcome');
   $('nickInput').value = nickname === R.DEFAULT_NICKNAME ? '' : nickname;
   $('welcomeMsg').textContent = message;
@@ -1690,6 +2323,8 @@ function openBowl(code) {
   room = null;
   serverRoom = null;
   pendingOps = [];
+  resetCrab();
+  viewingSince = Date.now();
 
   // Show the last known bowl straight away (works offline too).
   try {
@@ -1877,6 +2512,7 @@ function updateCard(now, perf) {
     $('fcBar').style.background = full < 20 ? 'var(--danger)' : away === 1 ? 'var(--danger)' : full >= 90 ? 'var(--warn)' : 'var(--accent-2)';
     $('fcPct').textContent = `${full} / 100 full`;
     $('fcMood').textContent = away ? '' : full < 20 ? 'Hungry!' : full < 40 ? 'Peckish' : full >= 90 ? 'Very full' : 'Happy';
+    $('fcSaved').hidden = sim.data.rescuedAt == null;
     const warn = $('fcWarn');
     warn.hidden = !away;
     warn.textContent = away === 1 ? `${name} will pop if you feed it! 😬` : `${name} is stuffed — only 1 more bite is safe`;
@@ -1945,6 +2581,7 @@ function showBoard() {
       <li><span>Oldest fish ever</span><span class="muted">${rec ? `${escapeHtml(rec.name)} the ${escapeHtml(typeName)} · ${rec.ageHours} hour${rec.ageHours === 1 ? '' : 's'} · ${rec.cause === 'overfed' ? 'ate too much' : 'starved'}` : '—'}</span></li>
       <li><span>Last week's Head Chef</span><span class="muted">${b.lastWeek && b.lastWeek.headChef ? escapeHtml(b.lastWeek.headChef) : '—'}</span></li>
       <li><span>Last week's Grim Feeder</span><span class="muted">${b.lastWeek && b.lastWeek.grimFeeder ? escapeHtml(b.lastWeek.grimFeeder) : '—'}</span></li>
+      <li><span>🦀 ${R.CRAB_NAME}'s rescues</span><span class="muted">${b.rescues}</span></li>
     </ul>
   `, 'board');
 }
@@ -1957,6 +2594,8 @@ function showMenu() {
       <small>A nickname, not your full name</small>
     </label>
     <button id="menuSave" class="btn">Save nickname</button>
+    <button id="menuQuiet" class="btn">${quietCrab ? '🦀 Let Barnaby talk again' : '🤫 Quiet Barnaby'}</button>
+    <p class="sheet-note small">${quietCrab ? 'Barnaby’s speech bubbles are off on this phone.' : 'Turns off Barnaby’s speech bubbles on this phone. He still walks around and looks after the fish.'}</p>
     <p class="sheet-note">Bowl code: <b>${escapeHtml(roomCode || '')}</b></p>
     <button id="menuLeave" class="btn btn-quiet">${DEMO ? 'Leave the demo' : 'Leave bowl'}</button>
     <p class="sheet-note small">Leaving only forgets the bowl on this phone. It keeps existing for your friends.</p>
@@ -1965,6 +2604,13 @@ function showMenu() {
     saveNicknameFrom($('menuNick'));
     closeSheet();
     toast(`You’re “${nickname}”`);
+  });
+  $('menuQuiet').addEventListener('click', () => {
+    quietCrab = !quietCrab;
+    store(KEYS.quiet, quietCrab ? '1' : null);
+    if (quietCrab) hideBubble();
+    closeSheet();
+    toast(quietCrab ? 'Barnaby will keep his thoughts to himself 🤫' : 'Barnaby can talk again 🦀');
   });
   $('menuLeave').addEventListener('click', () => {
     closeSheet();
@@ -1996,15 +2642,18 @@ function toast(msg) {
 // ---------------------------------------------------------------------------
 function startDemo() {
   const now = Date.now();
-  const ids = ['demoa1', 'demob2', 'democ3', 'demod4', 'demoe5', 'demof6', 'demog7'];
+  const ids = ['demoa1', 'demob2', 'democ3', 'demod4', 'demoe5', 'demof6', 'demog7', 'demoh8'];
   // name, type, color, fullness, age in hours (Captain turns 12 a few seconds in)
   const spec = [['Pickle', 'betta', 'royal', 94, 3], ['Captain', 'goldfish', 'orange', 70, 12 - 8 / 3600], ['Mochi', 'angelfish', 'silver', 97, 30],
-    ['Biscuit', 'puffer', 'puffer', 32, 20], ['Noodle', 'guppy', 'sunset', 12, 0.5], ['Waffle', 'comet', 'sarasa', 60, 6], ['Gilly', 'pleco', 'pleco', 55, 2]];
+    ['Biscuit', 'puffer', 'puffer', 32, 20], ['Noodle', 'guppy', 'sunset', 12, 0.5], ['Waffle', 'comet', 'sarasa', 60, 6], ['Gilly', 'pleco', 'pleco', 55, 2],
+    ['Sprout', 'platy', 'lemon', 1, 9]];
   const fish = {};
   ids.forEach((id, i) => {
     const [name, type, color, full, hours] = spec[i];
     fish[id] = { name, type, color, addedAt: now - hours * 3600e3, addedBy: ['Sam', 'Priya', 'Alex'][i % 3], fullness: full, fullnessAt: now, diedAt: null, cause: null };
   });
+  // Sprout runs out of food about 25 seconds in, so you can watch Barnaby's rescue.
+  fish.demoh8.fullnessAt = now - R.SECONDS_PER_POINT * 1000 + 25000;
   const demoRoom = {
     lastFedAt: now - 3 * 60e3, lastFedBy: 'Alex',
     feedLog: [
@@ -2033,6 +2682,7 @@ function startDemo() {
     sendHeart: (_code, by, fishId, at) => later(() => R.sendHeart(serverRoom, { fishId, by, now: at }))
   };
   roomCode = 'DEMO';
+  viewingSince = now;
   show('bowl');
   $('roomCode').textContent = 'DEMO';
   onServerRoom(demoRoom);
@@ -2088,7 +2738,9 @@ $('menuBtn').addEventListener('click', showMenu);
 $('activity').addEventListener('click', showHistory);
 $('sheetClose').addEventListener('click', closeSheet);
 $('sheet').addEventListener('click', (e) => { if (e.target === $('sheet')) closeSheet(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeSheet(); deselect(); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeSheet(); deselect(); closeCrabCard(); } });
+$('crabSay').addEventListener('click', hideBubble);
+$('crabCard').addEventListener('click', closeCrabCard);
 
 canvas.addEventListener('pointerdown', (e) => {
   if ($('bowlUi').hidden) return;
@@ -2100,8 +2752,10 @@ canvas.addEventListener('pointerdown', (e) => {
     const d = Math.hypot((s.x - x) * G.R, (s.y - y) * G.R);
     if (d < Math.max(44, fishLenPx(s) * 0.9) && d < bestD) { best = s; bestD = d; }
   }
-  if (best) { select(best); return; }
+  if (best) { closeCrabCard(); select(best); return; }
+  if (hitsCrab(x, y)) { openCrabCard(); return; }
   deselect();
+  closeCrabCard();
   if (x * x + y * y < 1 && y > BOWL.WATER_Y && y < BOWL.BASE_Y) {
     ripples.push({ x, y, age: 0, life: 0.7, size: 0.02 });
     for (const s of sims.values()) startle(s, x, y, 0.5);
@@ -2115,7 +2769,8 @@ window.addEventListener('online', () => { online = true; refreshControls(); conn
 // often freeze a backgrounded app's connection, so after a longer break
 // start a fresh one.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (document.hidden) { hiddenAt = Date.now(); viewingSince = Infinity; return; }
+  viewingSince = Date.now();
   if (DEMO || !roomCode) return;
   if (stopWatching && Date.now() - hiddenAt > 30000) { stopWatching(); stopWatching = null; }
   connect();
