@@ -1,0 +1,7 @@
+{
+  "format": "row-tracker-pattern",
+  "version": 1,
+  "sections": [
+    { "id": "main", "name": "Pattern", "steps": [ { "type": "row", "text": "Knit." } ] }
+  ]
+}

@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: 22
       - run: node fishbowlapp/tests/run.mjs
+      - run: node knittingapp/tests/run.mjs
 
   deploy:
     needs: test

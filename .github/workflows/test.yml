@@ -1,4 +1,4 @@
-# Runs the Fishbowl tests on every pull request.
+# Runs each app's tests on every pull request.
 name: Tests
 
 on:
@@ -16,3 +16,4 @@ jobs:
         with:
           node-version: 22
       - run: node fishbowlapp/tests/run.mjs
+      - run: node knittingapp/tests/run.mjs

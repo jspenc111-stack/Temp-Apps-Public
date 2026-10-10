@@ -1,0 +1,35 @@
+{
+  "format": "row-tracker-pattern",
+  "version": 1,
+  "title": "Plain Garter Scarf",
+  "designer": "Example Designer",
+  "source": "Invented example for testing",
+  "craft": "knit",
+  "units": "cm",
+  "info": {
+    "materials": ["200 g chunky yarn"],
+    "needles": ["6 mm straight needles"],
+    "gauge": { "stitches": 14, "rows": 28, "over": 10, "note": "Garter stitch on 6 mm" },
+    "notes": ["Worked flat, end to end, in garter stitch."]
+  },
+  "sections": [
+    {
+      "id": "scarf", "name": "Scarf", "worked": "flat",
+      "steps": [
+        { "type": "action", "text": "Cast on 28 sts with the 6 mm needles.", "needle": "6 mm", "stitchesAfter": 28, "page": 1 },
+        { "type": "row", "label": "Row 1", "side": "RS", "text": "Knit to end." },
+        { "type": "row", "label": "Row 2", "side": "WS", "text": "Slip 1 purlwise, knit to end." },
+        { "type": "row", "label": "Rows 3–10", "text": "Slip 1 purlwise, knit to end.", "count": 8 },
+        { "type": "measure", "text": "Keep working every row the same way until the scarf measures 150 cm.", "length": 150 },
+        { "type": "row", "label": "Last row", "side": "RS", "text": "Knit to end.", "stitchesAfter": 28 },
+        { "type": "action", "text": "Bind off loosely.", "stitchesAfter": 0 }
+      ]
+    },
+    {
+      "id": "finishing", "name": "Finishing",
+      "steps": [
+        { "type": "action", "text": "Finish the scarf.", "checklist": ["Weave in both ends", "Wash and dry flat"] }
+      ]
+    }
+  ]
+}

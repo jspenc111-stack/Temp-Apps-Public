@@ -1,0 +1,14 @@
+{
+  "format": "row-tracker-pattern",
+  "version": 1,
+  "title": "Measure Without Length Example",
+  "sections": [
+    {
+      "id": "main", "name": "Pattern",
+      "steps": [
+        { "type": "action", "text": "Cast on 20 sts.", "stitchesAfter": 20 },
+        { "type": "measure", "text": "Knit every row until it is long enough." }
+      ]
+    }
+  ]
+}
