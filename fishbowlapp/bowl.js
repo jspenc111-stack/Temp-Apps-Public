@@ -47,7 +47,8 @@ function fromFirestore(data) {
     hearts: Array.isArray(data.hearts) ? data.hearts : [],
     week: data.week ?? null,
     lastWeek: data.lastWeek ?? null,
-    record: data.record ?? null
+    record: data.record ?? null,
+    crab: data.crab ?? null
   };
 }
 
@@ -64,7 +65,9 @@ function toFirestore(room) {
     // The blame board fields only appear once there's something in them.
     ...(room.week ? { week: room.week } : {}),
     ...(room.lastWeek ? { lastWeek: room.lastWeek } : {}),
-    ...(room.record ? { record: room.record } : {})
+    ...(room.record ? { record: room.record } : {}),
+    // Old Barnaby's daily rescue: only saved once he has made one.
+    ...(room.crab ? { crab: room.crab } : {})
   };
 }
 
@@ -110,23 +113,36 @@ export function watchRoom(code, onData, onError) {
 // friends tapping at the same moment can't overwrite each other.
 // `at` is the moment of the tap. The phone already showed the change using
 // the same time, so the saved result matches what's on screen.
+//
+// If Barnaby has made a rescue nobody has saved yet, that is saved first,
+// on its own: the database accepts one rescue (and one new feed-log entry)
+// per save. Then the change itself is made on top.
 async function change(code, at, fn) {
   await ensureSignedIn();
-  for (let attempt = 1; ; attempt++) {
+  for (let attempt = 1, rescues = 0; ; ) {
     try {
-      return await runTransaction(db, async (tx) => {
+      const result = await runTransaction(db, async (tx) => {
         const snap = await tx.get(roomRef(code));
         if (!snap.exists()) throw new R.RuleError('missing', 'This bowl no longer exists');
-        const result = fn(fromFirestore(snap.data()), at);
-        if (result.write !== false) tx.set(roomRef(code), toFirestore(result.room));
-        return result;
+        const room = fromFirestore(snap.data());
+        const settled = R.resolveBowl(room, at, { maxRescues: 1 });
+        if (settled.events.some((e) => e.kind === 'rescue')) {
+          tx.set(roomRef(code), toFirestore(settled.room));
+          return { rescueSaved: true };
+        }
+        const res = fn(room, at);
+        if (res.write !== false) tx.set(roomRef(code), toFirestore(res.room));
+        return res;
       });
+      if (!result.rescueSaved) return result;
+      if (++rescues > 30) throw new Error('Too many rescues to save');
     } catch (e) {
       // If a friend saved at the same instant, the database can refuse our
       // save because it was built on an older copy of the feed log. Trying
       // again (after a short random pause) re-reads the latest bowl.
       if (e.code !== 'permission-denied' || attempt >= 5) throw e;
       await new Promise((r) => setTimeout(r, 50 * attempt + Math.random() * 150));
+      attempt++;
     }
   }
 }
@@ -147,7 +163,8 @@ export function sendHeart(code, nickname, fishId, at) {
   return change(code, at, (room, now) => R.sendHeart(room, { fishId, by: nickname, now }));
 }
 
-// Record starvations and remove long-dead fish. Only writes if needed.
+// Record Barnaby's rescues and starvations, and remove long-dead fish.
+// Only writes if needed.
 export function housekeeping(code) {
   return change(code, Date.now(), (room, now) => {
     const res = R.recordDeaths(room, now);
