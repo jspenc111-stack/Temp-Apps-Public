@@ -4,7 +4,7 @@ This repo holds several small apps, each in its own folder: `fishbowlapp/` (Fish
 
 Row Tracker (`knittingapp/`) has its own rules in `knittingapp/CLAUDE.md`.
 
-A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (max 15), and feed them. Overfeeding or starving kills fish; Old Barnaby the crab saves one starving fish every 24 hours. Static site on GitHub Pages; shared data in Firebase Firestore with Anonymous Auth. **`fishbowlapp/SPEC.md` is the source of truth for behavior.**
+A shared virtual fishbowl PWA. Friends join a bowl with a room code, add fish (max 15), and feed them. Overfeeding or starving kills fish; Old Barnaby the crab saves one starving fish every 12 hours. Static site on GitHub Pages; shared data in Firebase Firestore with Anonymous Auth. **`fishbowlapp/SPEC.md` is the source of truth for behavior.**
 
 ## About the owner
 - Not a developer. Explain changes in plain language, and define any technical term the first time you use it.

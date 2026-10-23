@@ -18,7 +18,7 @@ A fishbowl you share with friends. Anyone in the bowl can add fish (up to 15) an
 - **Over 100, a fish pops from overeating.** Near full it gets very round and slow. That's your warning.
 - **At 0, a fish starves.** Hungry fish turn grey and swim a bit erratically.
 - **🦀 Old Barnaby** is the crab with the spectacles and white mustache. He's in every bowl, never eats or dies, and isn't one of the 15 fish. He welcomes new fish, warns you before a fish pops, speaks up for hungry ones, tidies up flakes that sink to the gravel, celebrates birthdays, and comforts the bowl when a fish dies.
-- **Barnaby's daily rescue:** once every 24 hours he saves a fish from starving. He feeds it his emergency snack, which fills it back up to 95. It works even when nobody has the app open. The glowing snack pellet next to him means his rescue is ready; when it's gone, it's recharging. A rescued fish is nearly full, so go easy with the next feeds.
+- **Barnaby's rescue:** once every 12 hours he saves a fish from starving. He feeds it his emergency snack, which fills it back up to 95. It works even when nobody has the app open. The glowing snack pellet next to him means his rescue is ready; when it's gone, it's recharging. A rescued fish is nearly full, so go easy with the next feeds.
 - **Tap Barnaby** to see whether his snack is ready, and for a bit of crab wisdom. To turn his speech bubbles off on your phone, use **Quiet Barnaby** in the menu (⋯).
 - **❤️ Send love:** tap ❤️ (next to Feed all) to send hearts floating up on everyone's phone, or use "❤️ Pickle" on a fish's card to send them from that fish. One heart every 3 seconds.
 - **🏆 Blame board:** this week's Head Chef (most feeds), Grim Feeder (most fish overfed), Fish Dealer (most fish added) and Oldest Fish, plus a hall of fame. It resets every Monday at midnight. If a fish is overfed, the message says who gave it the last bite.
@@ -41,7 +41,7 @@ Firebase is Google's free online database. It stores each bowl so friends see th
 6. **Paste the rules:** Firestore Database → **Rules** tab → delete everything there → paste the whole contents of [`firestore.rules`](firestore.rules) → **Publish**.
 7. Stay on the free **Spark** plan. No billing needed.
 
-"Anonymous sign-in" means the app quietly signs each phone in without an account, so the database can turn away anything that isn't the app. The **rules** decide what the app is allowed to do: read one bowl by its code (never a list of all bowls), at most 15 fish, at most 20 feeds in the history, at most 10 hearts, at most 30 players on the weekly board, names of 20 characters or fewer, Barnaby's rescue at most once every 24 hours, and no deleting bowls.
+"Anonymous sign-in" means the app quietly signs each phone in without an account, so the database can turn away anything that isn't the app. The **rules** decide what the app is allowed to do: read one bowl by its code (never a list of all bowls), at most 15 fish, at most 20 feeds in the history, at most 10 hearts, at most 30 players on the weekly board, names of 20 characters or fewer, Barnaby's rescue at most once every 12 hours, and no deleting bowls.
 
 ## Privacy
 
