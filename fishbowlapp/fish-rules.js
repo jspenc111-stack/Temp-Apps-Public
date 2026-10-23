@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 export const START_FULLNESS = 50;
 export const FEED_AMOUNT = 5;
-export const SECONDS_PER_POINT = 864;   // -1 fullness every 14.4 minutes: 100 → 0 in 24 hours
+export const SECONDS_PER_POINT = 1728;  // -1 fullness every 28.8 minutes: 100 → 0 in 48 hours ((repo) the spec's 864 = 24 hours)
 export const MAX_FISH = 15;
 
 export const MAX_FULLNESS = 100;        // above this a fish dies of overfeeding

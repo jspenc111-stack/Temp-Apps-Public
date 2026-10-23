@@ -149,9 +149,9 @@ Every bowl has one crab, **Old Barnaby**: a kindly old mentor who lives on the g
 - Once every **24 hours** per bowl, Barnaby saves a fish from starving. It's a rolling 24 hours from his last rescue, not a calendar day, so friends in different time zones always agree.
   - **(repo)** At the owner's request, his snack recharges in **12 hours** instead: a rolling 12 hours from his last rescue. Wherever this section says 24 hours for the rescue, read 12.
 - When a fish's fullness reaches 0 and his rescue is ready, the fish doesn't die. Barnaby feeds it his emergency snack, which sets its fullness to **25** (about 6 more hours). His rescue then recharges for 24 hours.
-  - **(repo)** At the owner's request, the snack sets the fish's fullness to **95** instead (about 23 more hours). A saved fish is then nearly full: two more feeds would pop it, so the "about to pop" warnings show straight away.
+  - **(repo)** At the owner's request, the snack sets the fish's fullness to **95** instead (about 45½ more hours, with the slower hunger). A saved fish is then nearly full: two more feeds would pop it, so the "about to pop" warnings show straight away.
 - If his rescue isn't ready, the fish starves as normal. A rescued fish that starves again within 24 hours dies.
-  - **(repo)** With the 12-hour recharge and a fullness of 95 (about 23 hours of food), a rescued fish that nobody feeds runs out again after his snack has recharged, so he saves it again, unless the snack went to another fish in the last 12 hours.
+  - **(repo)** With the 12-hour recharge and a fullness of 95 (about 45½ hours of food), a rescued fish that nobody feeds runs out again after his snack has recharged, so he saves it again, unless the snack went to another fish in the last 12 hours.
 - He only saves **starving** fish. He can't undo overfeeding.
 - If two fish would starve at the exact same moment, he saves the one that's been in the bowl longest.
 - New bowls (and existing bowls with no crab data yet) start with the snack ready.
@@ -181,8 +181,9 @@ Every bowl has one crab, **Old Barnaby**: a kindly old mentor who lives on the g
 - A new fish starts at fullness **50** (scale 0–100).
 - **Each feed adds +5** to each fish it feeds: either every living fish (**Feed all**) or just the tapped fish (**Feed this fish**). So an empty fish can be fed **20 times** before it's full. One more feed after full kills it. A new fish (at 50) can take 10 feeds.
 - **Fullness drops 1 point every 864 seconds (14.4 minutes).** A full fish (100) starves in **24 hours**. A new fish has **12 hours**. Each feed buys about **72 minutes**.
+  - **(repo)** At the owner's request, hunger is half as fast: **1 point every 1728 seconds (28.8 minutes)**. A full fish starves in **48 hours**, a new fish has **24 hours**, and each feed buys about **2.4 hours**.
 - Above **100** → the fish dies of **overfeeding**. At **0** → it dies of **starvation**.
-- Keep these as named constants at the top of `fish-rules.js` (`START_FULLNESS = 50`, `FEED_AMOUNT = 5`, `SECONDS_PER_POINT = 864`, `MAX_FISH = 15`) so they're easy to tune.
+- Keep these as named constants at the top of `fish-rules.js` (`START_FULLNESS = 50`, `FEED_AMOUNT = 5`, `SECONDS_PER_POINT = 864`, `MAX_FISH = 15`) so they're easy to tune. **(repo)** `SECONDS_PER_POINT = 1728` (see above).
 - A dead fish turns pale, rolls belly-up, floats to the surface, and fades out after about 3 seconds. Then its spot frees up.
   - **(repo)** Exception, at the owner's request: an **overfed** fish **pops** instead (as in v1): it balloons and wobbles for a moment, then bursts into scales and bubbles with a "POP!", and nearby fish dart away. Starved fish float belly-up as above.
 
@@ -191,7 +192,7 @@ Every bowl has one crab, **Old Barnaby**: a kindly old mentor who lives on the g
 - `fullness`: the value at the moment it was last changed, and
 - `fullnessAt`: when that was.
 
-Current fullness = `fullness − floor((now − fullnessAt) / 864 seconds)`. Every phone calculates it the same way, so a fish can starve overnight even with nobody watching, and everyone sees the same number.
+Current fullness = `fullness − floor((now − fullnessAt) / 864 seconds)` (**(repo)** 1728 seconds). Every phone calculates it the same way, so a fish can starve overnight even with nobody watching, and everyone sees the same number.
 
 ## Data (Firestore)
 
@@ -354,7 +355,7 @@ Goal: look like a real fishbowl sitting somewhere, not a flat icon. Everything d
   - Its belly stretches with a shiny highlight.
 - **Selected-fish card:** "Pickle is stuffed — 2 more bites max" / "Pickle will pop if you feed it! 😬". **(repo)** The first message reads "Pickle is stuffed — only 1 more bite is safe", because at 2 feeds away the second bite pops it.
 - **Feed all button:** if any fish is 1 feed away, show a small ⚠️ on the button and a hint ("Careful: Pickle is stuffed"). This is just a warning; still allow feeding.
-- The indicator updates live as the fish gets hungrier over time (each feed wears off in about 72 minutes), and every phone shows the same thing.
+- The indicator updates live as the fish gets hungrier over time (each feed wears off in about 72 minutes; **(repo)** about 2.4 hours), and every phone shows the same thing.
 - It appears once the eat-then-grow animation finishes, not the moment Feed is tapped.
 
 **Fish spread out (no crowding):**
@@ -417,7 +418,7 @@ CLAUDE.md                           // rules for Claude Code
 
 ## Tests
 
-`node fishbowlapp/tests/run.mjs` tests the game logic in `fish-rules.js` with no internet and no npm packages: fullness math over time (full fish starves at exactly 24 h), +5 per feed, feeding one fish leaves the others unchanged, fish names are unique in the bowl, the name list has at least 200 unique names, every new fish gets a valid type, old fish with no type count as goldfish, the 20-feed limit (21st feed from empty kills it), `feedsUntilPop` returns 2 at fullness 91–95 and 1 at 96–100, overfeed death, starvation, the feed log keeping only 20 entries, the 15-fish limit, age in hours, the party hat at exactly 12 hours, blame-board counts (feeds, added, overfed blame goes to the fatal feeder), the Monday weekly reset moving winners into last week, ties, the oldest-fish record, hearts trimmed to 10, `crabTip` (overfeeding warning beats everything except a rescue, warns at 1 and 2 feeds away, flags fish below 20, says nothing urgent when all fish are fine), `resolveBowl` rescues (first starving fish is saved at fullness 95 **(repo)** with the rescue time set to the moment it hit 0; a second fish starving within 12 hours **(repo)** dies; the snack is ready again after exactly 12 hours **(repo)**; a rescued fish is saved again once the snack has recharged, unless it went to another fish **(repo)**; replaying a long gap with no phones open gives the right order of rescues and deaths; ties go to the oldest fish; overfed fish are never rescued; bowls with no crab data start with the snack ready; rescues don't count on the blame board), the crab never counting toward the 15-fish limit, and room-code format. Also a privacy test that scans public files for email addresses and secret-looking keys (other than the known Firebase web config). GitHub runs the tests on every pull request and before every deploy.
+`node fishbowlapp/tests/run.mjs` tests the game logic in `fish-rules.js` with no internet and no npm packages: fullness math over time (full fish starves at exactly 48 h **(repo)**; a new fish at 24 h), +5 per feed, feeding one fish leaves the others unchanged, fish names are unique in the bowl, the name list has at least 200 unique names, every new fish gets a valid type, old fish with no type count as goldfish, the 20-feed limit (21st feed from empty kills it), `feedsUntilPop` returns 2 at fullness 91–95 and 1 at 96–100, overfeed death, starvation, the feed log keeping only 20 entries, the 15-fish limit, age in hours, the party hat at exactly 12 hours, blame-board counts (feeds, added, overfed blame goes to the fatal feeder), the Monday weekly reset moving winners into last week, ties, the oldest-fish record, hearts trimmed to 10, `crabTip` (overfeeding warning beats everything except a rescue, warns at 1 and 2 feeds away, flags fish below 20, says nothing urgent when all fish are fine), `resolveBowl` rescues (first starving fish is saved at fullness 95 **(repo)** with the rescue time set to the moment it hit 0; a second fish starving within 12 hours **(repo)** dies; the snack is ready again after exactly 12 hours **(repo)**; a rescued fish is saved again once the snack has recharged, unless it went to another fish **(repo)**; replaying a long gap with no phones open gives the right order of rescues and deaths; ties go to the oldest fish; overfed fish are never rescued; bowls with no crab data start with the snack ready; rescues don't count on the blame board), the crab never counting toward the 15-fish limit, and room-code format. Also a privacy test that scans public files for email addresses and secret-looking keys (other than the known Firebase web config). GitHub runs the tests on every pull request and before every deploy.
 
 ## Deployment
 
