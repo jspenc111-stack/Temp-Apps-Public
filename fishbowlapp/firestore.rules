@@ -12,8 +12,8 @@ rules_version = '2';
 //   feed log, hearts are append-only (one new heart at the front).
 // - The feed log is append-only: each save may add one new entry at the
 //   front, and older entries can't be changed or erased.
-// - Old Barnaby the crab can rescue a fish at most once every 24 hours: his
-//   rescue count only goes up by 1 at a time, and only 24 hours or more
+// - Old Barnaby the crab can rescue a fish at most once every 12 hours: his
+//   rescue count only goes up by 1 at a time, and only 12 hours or more
 //   after his last rescue.
 // - Bowls can't be deleted.
 //
@@ -91,14 +91,14 @@ service cloud.firestore {
     // Old Barnaby's daily rescue. `crab` is missing until his first rescue
     // (missing = snack ready, 0 rescues). It either stays exactly the same,
     // or records one more rescue: the count goes up by exactly 1, and the
-    // new rescue time is at least 24 hours after the previous one and not
+    // new rescue time is at least 12 hours after the previous one and not
     // in the future (10 minutes' leeway for phone clocks that run fast).
     function crabOk(next, prev) {
       return next == prev
         || (next.keys().hasOnly(['lastRescueAt', 'rescues'])
             && next.rescues == prev.rescues + 1
             && next.lastRescueAt is number
-            && (prev.lastRescueAt == null || next.lastRescueAt >= prev.lastRescueAt + 86400000)
+            && (prev.lastRescueAt == null || next.lastRescueAt >= prev.lastRescueAt + 43200000)
             && next.lastRescueAt <= request.time.toMillis() + 600000);
     }
 

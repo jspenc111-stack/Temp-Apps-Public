@@ -22,10 +22,11 @@ export const HEART_COOLDOWN_MS = 3000;  // one heart per phone every 3 seconds
 export const PLAYERS_MAX = 30;          // blame board: players tracked per week
 const WEEK_MS = 7 * 24 * 3600 * 1000;
 
-// Old Barnaby the crab: once every 24 hours he saves a fish from starving.
-// (repo) The owner asked for 95 instead of the spec's 25.
+// Old Barnaby the crab: once every 12 hours he saves a fish from starving.
+// (repo) The owner asked for 95 instead of the spec's 25, and for 12 hours
+// instead of the spec's 24.
 export const RESCUE_FULLNESS = 95;
-export const RESCUE_COOLDOWN_HOURS = 24;
+export const RESCUE_COOLDOWN_HOURS = 12;
 export const CRAB_NAME = 'Barnaby';
 const RESCUE_COOLDOWN_MS = RESCUE_COOLDOWN_HOURS * 3600 * 1000;
 export const TIP_RECENT_MS = 30 * 1000;  // how long an arrival, death, birthday or rescue is "news"
@@ -292,7 +293,7 @@ export function snackStatus(crab, now) {
 // Replay everything since the bowl was last saved, in time order: each
 // moment a fish's fullness hits 0, and whether Barnaby's snack was ready
 // right then. Ready → he saves it (fullness back to RESCUE_FULLNESS, timed
-// at the moment it hit 0) and the snack recharges for 24 hours. Not ready →
+// at the moment it hit 0) and the snack recharges for 12 hours. Not ready →
 // it starved. Every phone gets the same answer from the same saved bowl,
 // even if nobody had the app open at the time.
 //

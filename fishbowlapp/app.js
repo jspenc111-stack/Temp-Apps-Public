@@ -1371,7 +1371,7 @@ function drawFish(sim, now, perf) {
 
 // ---------------------------------------------------------------------------
 // Old Barnaby, the crab. The same in every bowl, so each phone draws and
-// moves him itself; nothing about him is saved except his daily rescue
+// moves him itself; nothing about him is saved except his rescues
 // (room.crab). What he says comes from R.crabTips, worked out from the
 // shared fish data.
 // ---------------------------------------------------------------------------

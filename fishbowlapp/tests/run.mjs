@@ -52,8 +52,9 @@ function bowlWith(n, now = T0) {
   return { room, ids };
 }
 const fishOf = (room, id) => room.fish[id];
-// Barnaby used his snack just now, so nobody gets rescued for 24 hours.
-const noSnack = (room, at = T0) => ({ ...room, crab: { lastRescueAt: at, rescues: 1 } });
+// Barnaby used his snack an hour in, so nobody gets rescued until 13 hours in
+// (his snack recharges for 12 hours).
+const noSnack = (room, at = T0 + HOUR) => ({ ...room, crab: { lastRescueAt: at, rescues: 1 } });
 
 console.log('\nRules');
 
@@ -443,7 +444,7 @@ const list = (room) => Object.entries(room.fish).map(([id, f]) => ({ id, ...f })
 const hitsZero = (full, at = T0) => at + full * POINT;     // when a fish at `full` reaches 0
 
 test('rescue constants', () => {
-  eq(R.RESCUE_FULLNESS, 95); eq(R.RESCUE_COOLDOWN_HOURS, 24);
+  eq(R.RESCUE_FULLNESS, 95); eq(R.RESCUE_COOLDOWN_HOURS, 12);
 });
 
 test('resolveBowl: the first starving fish is saved, timed at the moment it hit 0', () => {
@@ -467,7 +468,7 @@ test('resolveBowl: nothing to do before any fish hits 0', () => {
   eq(res.events.length, 0); eq(res.room.crab, undefined);
 });
 
-test('resolveBowl: a second fish starving within 24 hours dies', () => {
+test('resolveBowl: a second fish starving within 12 hours dies', () => {
   const room = bowlOf(mk('a', 'Noodle', 10), mk('b', 'Pickle', 30));
   const res = R.resolveBowl(room, hitsZero(30) + HOUR);
   eq(res.events.map((e) => `${e.kind} ${e.name}`).join(', '), 'rescue Noodle, starved Pickle');
@@ -475,29 +476,40 @@ test('resolveBowl: a second fish starving within 24 hours dies', () => {
   eq(res.room.fish.a.diedAt, null);
 });
 
-test('resolveBowl: the snack is ready again after exactly 24 hours', () => {
+test('resolveBowl: the snack is ready again after exactly 12 hours', () => {
   const zero = hitsZero(10);
-  // Pickle hits 0 exactly 24 hours after Noodle was saved: saved too.
-  const exactly = bowlOf(mk('a', 'Noodle', 10), mk('b', 'Pickle', 10, T0 + 24 * HOUR));
-  const r1 = R.resolveBowl(exactly, zero + 24 * HOUR);
+  // Pickle hits 0 exactly 12 hours after Noodle was saved: saved too.
+  const exactly = bowlOf(mk('a', 'Noodle', 10), mk('b', 'Pickle', 10, T0 + 12 * HOUR));
+  const r1 = R.resolveBowl(exactly, zero + 12 * HOUR);
   const pickle = (r) => r.events.filter((e) => e.name === 'Pickle').map((e) => e.kind).join();
   eq(pickle(r1), 'rescue');
-  eq(r1.room.crab.rescues, 2); eq(r1.room.crab.lastRescueAt, zero + 24 * HOUR);
+  eq(r1.room.crab.rescues, 2); eq(r1.room.crab.lastRescueAt, zero + 12 * HOUR);
   // One millisecond sooner: Pickle starves.
-  const sooner = bowlOf(mk('a', 'Noodle', 10), mk('b', 'Pickle', 10, T0 + 24 * HOUR - 1));
-  eq(pickle(R.resolveBowl(sooner, zero + 25 * HOUR)), 'starved');
-  eq(R.snackReady({ lastRescueAt: zero }, zero + 24 * HOUR - 1), false);
-  eq(R.snackReady({ lastRescueAt: zero }, zero + 24 * HOUR), true);
+  const sooner = bowlOf(mk('a', 'Noodle', 10), mk('b', 'Pickle', 10, T0 + 12 * HOUR - 1));
+  eq(pickle(R.resolveBowl(sooner, zero + 13 * HOUR)), 'starved');
+  eq(R.snackReady({ lastRescueAt: zero }, zero + 12 * HOUR - 1), false);
+  eq(R.snackReady({ lastRescueAt: zero }, zero + 12 * HOUR), true);
 });
 
-test('resolveBowl: a rescued fish that starves again within 24 hours dies', () => {
+test('resolveBowl: a rescued fish is saved again once the snack has recharged', () => {
+  // A saved fish lasts about 23 hours, longer than the 12-hour recharge.
   const room = bowlOf(mk('a', 'Noodle', 10));
   const zero = hitsZero(10);
   const again = zero + R.RESCUE_FULLNESS * POINT;          // about 23 hours later
-  ok(again - zero < 24 * HOUR);
+  ok(again - zero >= R.RESCUE_COOLDOWN_HOURS * HOUR);
   const res = R.resolveBowl(room, again + HOUR);
-  eq(res.events.map((e) => e.kind).join(), 'rescue,starved');
-  eq(res.room.fish.a.cause, 'starved'); eq(res.room.fish.a.diedAt, again);
+  eq(res.events.map((e) => e.kind).join(), 'rescue,rescue');
+  eq(res.room.fish.a.diedAt, null); eq(res.room.fish.a.rescuedAt, again); eq(res.room.crab.rescues, 2);
+});
+
+test('resolveBowl: ...but not if the snack went to another fish in the last 12 hours', () => {
+  // Noodle is saved at 2.4 h; Pickle at 17.3 h; Noodle runs out again at
+  // 25.2 h, while the snack is still recharging from Pickle's rescue.
+  const room = bowlOf(mk('a', 'Noodle', 10), mk('b', 'Pickle', 72));
+  const res = R.resolveBowl(room, T0 + 30 * HOUR);
+  const story = res.events.map((e) => `${e.kind} ${e.name} @${Math.round((e.at - T0) / 60000)}m`).join(', ');
+  eq(story, 'rescue Noodle @144m, rescue Pickle @1037m, starved Noodle @1512m');
+  eq(res.room.fish.a.cause, 'starved');
 });
 
 test('resolveBowl: a long gap with no phones open replays rescues and deaths in order', () => {
@@ -505,14 +517,15 @@ test('resolveBowl: a long gap with no phones open replays rescues and deaths in 
   const room = bowlOf(mk('a', 'Noodle', 5), mk('b', 'Pickle', 40), mk('c', 'Biscuit', 100), mk('d', 'Waffle', 60, T0 + 30 * HOUR));
   const res = R.resolveBowl(room, T0 + 72 * HOUR);
   const story = res.events.map((e) => `${e.kind} ${e.name} @${Math.round((e.at - T0) / 60000)}m`).join(', ');
-  // Noodle 0 at 72 min (saved); Pickle 0 at 9.6 h (snack used: starves);
-  // Noodle again at 72 min + 22.8 h = 24 h (snack still charging): starves;
-  // Biscuit 0 at 24 h too (same moment; Noodle is first by id): starves;
-  // Waffle (fed at 30 h) hits 0 at 30 h + 14.4 h: snack ready → saved; then
-  // starves again 22.8 h later (at 67.2 h).
-  eq(story, 'rescue Noodle @72m, starved Pickle @576m, starved Noodle @1440m, starved Biscuit @1440m, rescue Waffle @2664m, starved Waffle @4032m');
-  eq(res.room.crab.rescues, 2);
-  eq(res.room.feedLog.filter((e) => e.rescue).map((e) => e.fishName).join(), 'Waffle,Noodle', 'newest first');
+  // The snack recharges for 12 hours after each rescue.
+  // Noodle 0 at 72 min (saved; ready again at 13.2 h); Pickle 0 at 9.6 h (starves);
+  // Noodle again at 72 min + 22.8 h = 24 h (saved; ready again at 36 h);
+  // Biscuit 0 at 24 h too (same moment, Noodle is first by id; starves);
+  // Waffle (fed at 30 h) hits 0 at 44.4 h (saved; ready again at 56.4 h);
+  // Noodle again at 46.8 h (starves); Waffle again at 67.2 h (saved).
+  eq(story, 'rescue Noodle @72m, starved Pickle @576m, rescue Noodle @1440m, starved Biscuit @1440m, rescue Waffle @2664m, starved Noodle @2808m, rescue Waffle @4032m');
+  eq(res.room.crab.rescues, 4);
+  eq(res.room.feedLog.filter((e) => e.rescue).map((e) => e.fishName).join(), 'Waffle,Waffle,Noodle,Noodle', 'newest first');
 });
 
 test('resolveBowl: ties go to the fish that has been in the bowl longest', () => {
@@ -533,9 +546,9 @@ test('bowls with no crab data start with the snack ready', () => {
   eq(R.crabOf({}).lastRescueAt, null); eq(R.crabOf({}).rescues, 0);
   ok(R.snackReady(undefined, T0)); ok(R.snackReady(null, T0));
   eq(R.snackStatus(null, T0), 'Emergency snack: ready ✅');
-  eq(R.snackStatus({ lastRescueAt: T0, rescues: 1 }, T0 + 17 * HOUR), 'Snack recharging — ready in 7 hours');
-  eq(R.snackStatus({ lastRescueAt: T0, rescues: 1 }, T0 + 23 * HOUR + 30 * MIN), 'Snack recharging — ready in 1 hour');
-  eq(R.snackStatus({ lastRescueAt: T0, rescues: 1 }, T0 + 24 * HOUR), 'Emergency snack: ready ✅');
+  eq(R.snackStatus({ lastRescueAt: T0, rescues: 1 }, T0 + 5 * HOUR), 'Snack recharging — ready in 7 hours');
+  eq(R.snackStatus({ lastRescueAt: T0, rescues: 1 }, T0 + 11 * HOUR + 30 * MIN), 'Snack recharging — ready in 1 hour');
+  eq(R.snackStatus({ lastRescueAt: T0, rescues: 1 }, T0 + 12 * HOUR), 'Emergency snack: ready ✅');
 });
 
 test('rescues don\'t count on the blame board; the hall of fame counts them', () => {
@@ -551,17 +564,23 @@ test('rescues don\'t count on the blame board; the hall of fame counts them', ()
 });
 
 test('the database gets one rescue per save: recordDeaths stops before the next one', () => {
-  const room = bowlOf(mk('a', 'Noodle', 5), mk('d', 'Waffle', 60, T0 + 30 * HOUR));
-  const first = R.recordDeaths(room, T0 + 72 * HOUR);
-  ok(first.changed); ok(first.more, 'another rescue is waiting');
-  eq(first.rescued.map((e) => e.name).join(), 'Noodle');
-  eq(first.room.crab.rescues, 1);
-  eq(first.room.feedLog.length, 1);
-  const second = R.recordDeaths(first.room, T0 + 72 * HOUR);
-  eq(second.rescued.map((e) => e.name).join(), 'Waffle');
-  eq(second.more, false); eq(second.room.crab.rescues, 2); eq(second.room.feedLog.length, 2);
-  // Noodle starved again on the way (before Waffle's rescue), Waffle afterwards.
-  eq(first.starved.map((e) => e.name).join(), 'Noodle'); eq(second.starved.map((e) => e.name).join(), 'Waffle');
+  // Same 3-day gap as above, minus Pickle and Biscuit: 4 rescues waiting.
+  let room = bowlOf(mk('a', 'Noodle', 5), mk('d', 'Waffle', 60, T0 + 30 * HOUR));
+  const rescued = [], starved = [];
+  for (let save = 1; ; save++) {
+    const res = R.recordDeaths(room, T0 + 72 * HOUR);
+    ok(res.changed);
+    eq(res.rescued.length, 1, `save ${save}: one rescue`);
+    eq(res.room.crab.rescues, save); eq(res.room.feedLog.length, save);
+    rescued.push(...res.rescued.map((e) => e.name));
+    starved.push(...res.starved.map((e) => e.name));
+    room = res.room;
+    if (!res.more) break;
+    ok(save < 10, 'stops');
+  }
+  eq(rescued.join(), 'Noodle,Noodle,Waffle,Waffle');
+  eq(starved.join(), 'Noodle');
+  eq(R.recordDeaths(room, T0 + 72 * HOUR).changed, false, 'nothing left to save');
 });
 
 test('feeding settles a rescue first, then feeds', () => {
