@@ -321,6 +321,43 @@ test('feed log entries name the fish, and "everyone" for Feed all', () => {
   eq(all.feedLog[0].fishId, null);
   eq(R.describeFeed(all.feedLog[0]), 'Sam fed everyone');
   eq(all.lastFedBy, 'Sam');
+  eq(all.feedLog[0].popped, undefined, 'nothing popped: no popped field');
+  eq(R.historyLine(all.feedLog[0]), 'Sam fed everyone');
+});
+
+test('pops are in the feeding history, kept with the feed that caused them', () => {
+  // Three fish: two stuffed to 100, one at 50.
+  let { room, ids } = bowlWith(3);
+  for (let i = 0; i < 10; i++) room = R.feed(room, { fishId: ids[0], by: 'Sam', now: T0 }).room;
+  for (let i = 0; i < 10; i++) room = R.feed(room, { fishId: ids[1], by: 'Sam', now: T0 }).room;
+  const [a, b] = [room.fish[ids[0]].name, room.fish[ids[1]].name];
+  // Feeding one stuffed fish pops it.
+  const one = R.feed(room, { fishId: ids[0], by: 'Priya', now: T0 + 1 }).room;
+  eq(one.feedLog[0].popped, a);
+  eq(R.historyLine(one.feedLog[0]), `Priya fed ${a} — 💥 it popped`);
+  // Feed all pops the other stuffed fish; the 50 one survives.
+  const all = R.feed(one, { by: 'Alex', now: T0 + 2 }).room;
+  eq(all.feedLog[0].popped, b);
+  eq(R.historyLine(all.feedLog[0]), `Alex fed everyone — 💥 ${b} popped`);
+  // The live toast on other phones doesn't give it away before the fish pops.
+  eq(R.describeFeed(all.feedLog[0]), 'Alex fed everyone');
+  // Still reads right after the dead fish are cleared away.
+  const tidy = R.recordDeaths(all, T0 + 2 * MIN).room;
+  ok(!tidy.fish[ids[1]], 'cleared');
+  eq(R.historyLine(tidy.feedLog[0]), `Alex fed everyone — 💥 ${b} popped`);
+});
+
+test('a feed that pops several fish names them all', () => {
+  let { room, ids } = bowlWith(3);
+  for (let i = 0; i < 10; i++) room = R.feed(room, { by: 'Sam', now: T0 }).room;
+  const names = ids.map((id) => room.fish[id].name);
+  const res = R.feed(room, { by: 'Priya', now: T0 + 1 }).room;
+  eq(res.feedLog[0].popped, `${names[0]}, ${names[1]} & ${names[2]}`);
+  eq(R.historyLine(res.feedLog[0]), `Priya fed everyone — 💥 ${names[0]}, ${names[1]} & ${names[2]} popped`);
+  // A full bowl of 15 popping at once still fits the database's length limit.
+  let big = bowlWith(15).room;
+  for (let i = 0; i < 10; i++) big = R.feed(big, { by: 'Sam', now: T0 }).room;
+  ok(R.feed(big, { by: 'Sam', now: T0 + 1 }).room.feedLog[0].popped.length <= R.POPPED_MAX);
 });
 
 // Blame board -------------------------------------------------------------
