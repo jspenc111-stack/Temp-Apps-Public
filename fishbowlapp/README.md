@@ -11,7 +11,7 @@ A fishbowl you share with friends. Anyone in the bowl can add fish (up to 15) an
 - **Add fish:** up to 15. Each plops in from the top and gets a random name (like Pickle or Sir Swims-a-Lot) and one of 12 fish types: goldfish, fantail, comet, betta, guppy, neon tetra, angelfish, zebra danio, molly, platy, pufferfish or pleco. Each type looks and swims differently.
 - **Feed all** feeds every fish. To feed just one, tap it and use **Feed this fish**.
 - Each feed adds 5 to a fish's fullness (out of 100). A new fish starts at 50.
-- Fish get hungry slowly: they lose 1 point every 14.4 minutes, even when nobody has the app open. A full fish lasts 24 hours.
+- Fish get hungry slowly: they lose 1 point every 28.8 minutes, even when nobody has the app open. A full fish lasts 48 hours, a new fish 24 hours, and each feed adds about 2.4 hours.
 - **You can see how full a fish is:** a hungry fish is skinny, and a full one is nearly a ball. A fed fish grows once it has eaten its flakes.
 - **Watch for warnings:** a yellow **!** over a fish means it's getting full, and a red 🤢 means the next bite will pop it. The fish card and the Feed all button warn you too.
 - **Birthdays:** tap a fish to see how old it is. At 12 hours old it gets a party hat 🎉.
