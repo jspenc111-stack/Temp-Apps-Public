@@ -22,7 +22,7 @@ A fishbowl you share with friends. Anyone in the bowl can add fish (up to 15) an
 - **Tap Barnaby** to see whether his snack is ready, and for a bit of crab wisdom. To turn his speech bubbles off on your phone, use **Quiet Barnaby** in the menu (⋯).
 - **❤️ Send love:** tap ❤️ (next to Feed all) to send hearts floating up on everyone's phone, or use "❤️ Pickle" on a fish's card to send them from that fish. One heart every 3 seconds.
 - **🏆 Blame board:** this week's Head Chef (most feeds), Grim Feeder (most fish overfed), Fish Dealer (most fish added) and Oldest Fish, plus a hall of fame. It resets every Monday at midnight. If a fish is overfed, the message says who gave it the last bite.
-- The line under the fish count ("Last fed 3 min ago by Sam") shows who fed them last. Tap it to see the last 20 feeds.
+- The line under the fish count ("Last fed 3 min ago by Sam") shows who fed them last. Tap it to see the last 20 feeds, including any fish a feed popped 💥.
 - **Menu (⋯):** change your nickname, **Quiet Barnaby**, or **Leave bowl**. Leaving only forgets the bowl on your phone; it stays there for your friends.
 
 ## Install it on your phone (Android)

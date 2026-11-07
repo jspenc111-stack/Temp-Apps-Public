@@ -2550,7 +2550,7 @@ function formatWhen(ms) {
 function showHistory() {
   const log = (room && room.feedLog) || [];
   const items = log.length
-    ? log.map((e) => `<li><span>${escapeHtml(R.describeFeed(e))}</span><time>${escapeHtml(formatWhen(e.at))}</time></li>`).join('')
+    ? log.map((e) => `<li><span>${escapeHtml(R.historyLine(e))}</span><time>${escapeHtml(formatWhen(e.at))}</time></li>`).join('')
     : '<li class="empty">Nobody has fed the fish yet.</li>';
   openSheet('Feeding history', `<ul class="history">${items}</ul>`, 'history');
 }

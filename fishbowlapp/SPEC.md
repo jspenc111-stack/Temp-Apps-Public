@@ -55,6 +55,7 @@ A small, playful app: a virtual fishbowl that **friends share**. Anyone in the b
 - Counter: "6 / 15 fish".
 - Activity line: "Last fed 3 min ago by Sam". This is how friends avoid overfeeding.
 - **Feeding history:** tapping the activity line opens a short list of the most recent feeds (up to 20), e.g. "Sam fed everyone · 2:14 PM", "Priya fed Pickle · 11:02 AM". Name individual fish by their fun name (e.g. "Priya fed Pickle"). Save the name in the log entry, so it still reads correctly after that fish is gone. Anyone in the bowl can feed; this just shows who did.
+  - **(repo)** At the owner's request, a feed that popped fish says so: "Priya fed Pickle — 💥 it popped", "Sam fed everyone — 💥 Pickle & Noodle popped". The names are saved in the log entry (`popped`), so they still read correctly after the fish are gone. The live "Sam fed everyone" message on other phones doesn't mention the pop; the pop has its own message when it happens.
 - Header shows the room code and a **Share** button. Share opens the phone's share menu (Web Share API) with the join link; if that's unavailable, copy the link and show "Link copied".
 - Menu: change nickname, **Leave bowl** (forgets the room on this phone only; the bowl keeps existing for friends).
 - **❤️ Send love button** (small, next to Feed all): sends a heart to everyone in the bowl.
@@ -203,7 +204,7 @@ rooms/K7QM3P
   createdAt:   timestamp
   lastFedAt:   timestamp | null
   lastFedBy:   string | null            // nickname
-  feedLog:     [ { by: string, at: number (ms), fishId: string | null, fishName: string | null, rescue?: true } ]   // null = fed all; rescue = Barnaby's rescue (by: "Barnaby"); newest first, keep only the last 20
+  feedLog:     [ { by: string, at: number (ms), fishId: string | null, fishName: string | null, rescue?: true, popped?: string } ]   // null = fed all; rescue = Barnaby's rescue (by: "Barnaby"); (repo) popped = names of the fish this feed popped; newest first, keep only the last 20
   hearts:      [ { by: string, at: number (ms), fishId: string | null, fishName: string | null } ]  // newest first, keep only the last 10
   week: {
     start:     number (ms)              // Monday 00:00 of the current week

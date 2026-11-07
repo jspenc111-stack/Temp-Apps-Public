@@ -61,12 +61,15 @@ service cloud.firestore {
         && (n < 13 || fishOk(v[12])) && (n < 14 || fishOk(v[13])) && (n < 15 || fishOk(v[14]));
     }
 
+    // `popped` names the fish a feed popped ("Pickle, Noodle & Biscuit"):
+    // up to 400 characters, enough for all 15 fish.
     function logEntryOk(e) {
       return e is map
-        && e.keys().hasOnly(['by', 'at', 'fishId', 'fishName', 'rescue'])
+        && e.keys().hasOnly(['by', 'at', 'fishId', 'fishName', 'rescue', 'popped'])
         && shortText(e.by)
         && e.at is number
-        && (e.get('fishName', null) == null || shortText(e.fishName));
+        && (e.get('fishName', null) == null || shortText(e.fishName))
+        && e.get('popped', '') is string && e.get('popped', '').size() <= 400;
     }
 
     // A list stays the same, or gains exactly one new entry at the front

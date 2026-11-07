@@ -20,6 +20,7 @@ export const PARTY_HAT_HOURS = 12;      // a fish gets a party hat at this age
 export const HEARTS_MAX = 10;           // the bowl keeps only the newest hearts
 export const HEART_COOLDOWN_MS = 3000;  // one heart per phone every 3 seconds
 export const PLAYERS_MAX = 30;          // blame board: players tracked per week
+export const POPPED_MAX = 400;          // feed-log text naming the fish a feed popped (15 names fit)
 const WEEK_MS = 7 * 24 * 3600 * 1000;
 
 // Old Barnaby the crab: once every 12 hours he saves a fish from starving.
@@ -512,7 +513,11 @@ export function feed(room, { fishId = null, by, now }) {
   bump(next, nickname, 'feeds', now);
   next.lastFedAt = now;
   next.lastFedBy = nickname;
-  next.feedLog = [{ by: nickname, at: now, fishId, fishName }, ...next.feedLog].slice(0, FEED_LOG_MAX);
+  // Fish this feed popped are named in its log entry, so the history still
+  // shows them after the dead fish are cleared away.
+  const popped = died.filter((d) => d.cause === 'overfed').map((d) => d.name);
+  const entry = { by: nickname, at: now, fishId, fishName, ...(popped.length ? { popped: joinNames(popped).slice(0, POPPED_MAX) } : {}) };
+  next.feedLog = [entry, ...next.feedLog].slice(0, FEED_LOG_MAX);
   return { room: next, fed, died };
 }
 
@@ -655,6 +660,15 @@ export function crabTips(fishList, crab, now) {
 // ---------------------------------------------------------------------------
 // Words for the screen
 // ---------------------------------------------------------------------------
+
+// A line in the feeding history: the feed, plus any fish it popped.
+// (describeFeed alone is used for the live toast, so it doesn't give the
+// pop away before the fish has eaten and popped on screen.)
+export function historyLine(entry) {
+  const base = describeFeed(entry);
+  if (!entry.popped) return base;
+  return entry.fishId != null ? `${base} — 💥 it popped` : `${base} — 💥 ${entry.popped} popped`;
+}
 
 export function describeFeed(entry) {
   if (entry.rescue) return `🦀 ${CRAB_NAME} saved ${entry.fishName || 'a fish'}`;
