@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- Tells the browser to refuse anything that doesn't come from this app's own site. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'">
 <title>Row Tracker</title>
 <meta name="description" content="Keep your place in a knitting or crochet pattern, row by row.">
-<meta name="theme-color" content="#9C3F5D">
+<meta name="theme-color" content="#9C3F5D" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#211C18" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon-192.png">
@@ -15,121 +15,149 @@
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<main class="wrap">
+<noscript>Row Tracker needs JavaScript turned on.</noscript>
 
-  <!-- ============ ADD A PATTERN ============ -->
-  <section id="add" class="hidden" aria-labelledby="addTitle">
-    <h1 id="addTitle">Row Tracker</h1>
-    <p class="muted">Open a pattern file, then tap through it row by row while you knit or crochet.</p>
+<!-- ===================== HOME: your projects ===================== -->
+<section id="home" class="screen" hidden>
+  <header class="top">
+    <h1 class="brand">Row Tracker</h1>
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings">⚙︎</button>
+  </header>
+  <p class="muted" id="homeEmpty" hidden>Nothing on the needles yet. Start a project below.</p>
+  <div id="projectList" class="cards"></div>
+  <button class="btn primary big" id="newBtn">New project</button>
+  <p class="muted small center">Everything stays on this phone. Nothing is sent anywhere.</p>
+</section>
 
-    <button class="btn btn-primary first" id="openFileBtn" type="button">Open pattern file</button>
-    <input type="file" id="fileInput" class="hidden" tabindex="-1" aria-hidden="true"
-           accept=".json,application/json,text/plain,.txt,application/pdf,.pdf">
+<!-- ===================== NEW: pick how to start ===================== -->
+<section id="new" class="screen" hidden>
+  <header class="top"><button class="icon-btn" data-back aria-label="Back">‹</button><h2>New project</h2><span></span></header>
+  <button class="choice" id="chooseQuick">
+    <b>Quick setup</b>
+    <span>Name the parts, say how many rows, add repeats and reminders. Ten seconds, no file needed.</span>
+  </button>
+  <button class="choice" id="choosePattern">
+    <b>Open a pattern file</b>
+    <span>A file made by the Pattern Converter in Claude. Shows every row's instruction.</span>
+  </button>
+  <button class="choice" id="chooseCounter">
+    <b>Just count rows</b>
+    <span>One big button. Nothing else.</span>
+  </button>
+</section>
 
-    <div class="status hidden" id="addStatus" role="alert">
-      <strong id="addStatusTitle"></strong>
-      <ul id="addStatusList"></ul>
-    </div>
-
-    <label class="small" for="pasteInput">Paste pattern file</label>
-    <textarea id="pasteInput" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"
-              placeholder="Or paste the copied pattern file here."></textarea>
-    <button class="btn btn-secondary" id="pasteOpenBtn" type="button">Open</button>
-
-    <div class="links">
-      <button class="btn-text" id="helpBtn" type="button">How do I make a pattern file?</button>
-      <button class="btn-text" id="counterBtn" type="button">No pattern? Just count rows</button>
-    </div>
-    <button class="btn btn-secondary hidden" id="backToKnittingBtn" type="button">Back to my knitting</button>
-  </section>
-
-  <!-- ============ PICK YOUR SIZE ============ -->
-  <section id="size" class="hidden" aria-labelledby="sizeHeading">
-    <h1 id="sizeTitle"></h1>
-    <p class="muted" id="sizeDesigner"></p>
-    <h2 id="sizeHeading">Pick your size</h2>
-    <p class="muted hidden" id="sizeNote"></p>
-    <div id="sizeList"></div>
-    <button class="btn btn-secondary" id="sizeCancelBtn" type="button">Choose a different file</button>
-  </section>
-
-  <!-- ============ CHECK IT ============ -->
-  <section id="check" class="hidden" aria-labelledby="checkTitle">
-    <p class="eyebrow">Check it</p>
-    <h1 id="checkTitle"></h1>
-    <p class="muted" id="checkSummary"></p>
-    <div class="notes hidden" id="checkNotes">
-      <h2>Worth a look in your pattern</h2>
-      <ul id="checkNotesList"></ul>
-    </div>
-    <div id="checkList"></div>
-    <button class="btn btn-primary" id="startBtn" type="button">Start knitting</button>
-    <button class="btn btn-secondary" id="differentFileBtn" type="button">Choose a different file</button>
-  </section>
-
-  <!-- ============ TRACKER ============ -->
-  <section id="tracker" class="hidden" aria-labelledby="trTitle">
-    <div class="topbar">
-      <h1 id="trTitle">Row Tracker</h1>
-      <button class="btn-text" id="sectionsBtn" type="button">Sections</button>
-    </div>
-    <div class="sec-line" id="secLine"></div>
-
-    <div class="swatch-wrap">
-      <svg class="swatch" id="swatch" viewBox="0 0 320 60" role="img" aria-label="No rows finished yet"></svg>
-      <button class="overall" id="overall" type="button" aria-label="Progress through the pattern. Open the list of sections."></button>
-      <div class="overall-label"><span id="overallLeft"></span><span id="overallRight"></span></div>
-    </div>
-
-    <div class="rowcard" id="rowcard">
-      <div class="row-num" id="rowNum"></div>
-      <div class="pills hidden" id="pills"></div>
-      <div class="row-text" id="rowText"></div>
-      <ul class="checklist hidden" id="checklist"></ul>
-      <div class="measure hidden" id="measureBox">
-        <strong id="measureCount"></strong>
-        <span id="measureEstimate"></span>
+<!-- ===================== SETUP: quick project form ===================== -->
+<section id="setup" class="screen" hidden>
+  <header class="top"><button class="icon-btn" data-back aria-label="Back">‹</button><h2 id="setupTitle">Quick setup</h2><span></span></header>
+  <form id="setupForm" autocomplete="off">
+    <label class="field">Project name<input type="text" id="setupName" maxlength="60" placeholder="Blue cardigan" required></label>
+    <div class="field">
+      <span>Craft</span>
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="craft" value="knit" checked><span>Knit</span></label>
+        <label><input type="radio" name="craft" value="crochet"><span>Crochet</span></label>
       </div>
-      <div class="row-end hidden" id="rowEnd"></div>
-      <div class="flag hidden" id="flagLine"></div>
     </div>
+    <h3>Parts <span class="muted small">(in the order you'll work them)</span></h3>
+    <div id="sectionList"></div>
+    <button type="button" class="btn ghost" id="addSectionBtn">+ Add a part</button>
+    <button type="submit" class="btn primary big" id="setupSave">Start knitting</button>
+  </form>
+</section>
 
-    <div class="stitches" id="stitchBox">
-      <button class="stitch-minus" id="stMinus" type="button" aria-label="Take one stitch off the count">−</button>
-      <button class="stitch-plus" id="stPlus" type="button">
-        <span class="plus" aria-hidden="true">+1</span>
-        <span class="stitch-text"><b id="stCount">0</b><span id="stLabel" aria-live="polite"></span></span>
-      </button>
+<!-- ===================== FILE: open a pattern file ===================== -->
+<section id="file" class="screen" hidden>
+  <header class="top"><button class="icon-btn" data-back aria-label="Back">‹</button><h2>Pattern file</h2><span></span></header>
+  <button class="btn primary big" id="pickFileBtn">Open pattern file</button>
+  <input type="file" id="fileInput" accept=".json,application/json,text/plain" hidden>
+  <p class="muted center">or paste the file's text</p>
+  <textarea id="pasteBox" rows="5" placeholder='{ "format": "row-tracker-pattern", ... }'></textarea>
+  <button class="btn ghost" id="pasteBtn">Open pasted text</button>
+  <details class="help"><summary>How do I make a pattern file?</summary>
+    <p>Share your pattern PDF with Claude and ask it to <b>convert this pattern for Row Tracker</b>. Download the file it gives you, then open it here. The PDF itself never goes into this app.</p>
+  </details>
+  <div id="fileStatus" class="status" hidden></div>
+</section>
+
+<!-- ===================== SIZE: pick a size for a pattern file ===================== -->
+<section id="size" class="screen" hidden>
+  <header class="top"><button class="icon-btn" data-back aria-label="Back">‹</button><h2>Pick your size</h2><span></span></header>
+  <p id="sizeIntro" class="muted"></p>
+  <div id="sizeList" class="cards"></div>
+</section>
+
+<!-- ===================== REVIEW: check a pattern file ===================== -->
+<section id="review" class="screen" hidden>
+  <header class="top"><button class="icon-btn" data-back aria-label="Back">‹</button><h2 id="reviewTitle">Check it</h2><span></span></header>
+  <p id="reviewSummary" class="muted"></p>
+  <div id="reviewFlags" class="status warn" hidden></div>
+  <div id="reviewList"></div>
+  <button class="btn primary big" id="reviewStart">Start knitting</button>
+</section>
+
+<!-- ===================== TRACK: the knitting screen ===================== -->
+<section id="track" class="screen track" hidden>
+  <header class="top">
+    <button class="icon-btn" id="trackHome" aria-label="All projects">‹</button>
+    <div class="title-block">
+      <h2 id="trackName"></h2>
+      <button class="section-pill" id="sectionBtn"></button>
     </div>
+    <button class="icon-btn" id="trackMenu" aria-label="Project menu">⋯</button>
+  </header>
 
-    <div class="nav">
-      <button class="btn btn-secondary back" id="backBtn" type="button">Back</button>
-      <button class="btn btn-primary" id="nextBtn" type="button">Row done</button>
+  <div class="swatch-wrap">
+    <svg id="swatch" viewBox="0 0 320 60" role="img" aria-label="Rows knitted so far"></svg>
+    <div class="bar" id="bar"></div>
+    <div class="bar-label"><span id="barLeft"></span><span id="barRight"></span></div>
+  </div>
+
+  <div id="reminder" class="reminder" hidden>
+    <span id="reminderText"></span>
+    <button class="btn small" id="reminderOk">Got it</button>
+  </div>
+
+  <div class="rowcard" id="rowcard">
+    <div class="row-head">
+      <div class="row-num" id="rowNum"></div>
+      <div class="pills" id="pills"></div>
     </div>
-    <button class="btn btn-secondary hidden" id="moveOnBtn" type="button"></button>
-    <p class="upnext" id="upNext"></p>
-    <p class="status hidden" id="trackerStatus" role="status"></p>
+    <p class="row-text" id="rowText"></p>
+    <ul class="checklist" id="checklist" hidden></ul>
+    <p class="row-note" id="rowNote" hidden></p>
+    <p class="row-flag" id="rowFlag" hidden></p>
+  </div>
 
-    <div class="footer">
-      <button class="btn-text" id="wakeBtn" type="button" aria-pressed="false">Keep screen on</button>
-      <button class="btn-text" id="infoBtn" type="button">Pattern info</button>
-      <button class="btn-text" id="resetBtn" type="button">Start over</button>
-    </div>
-  </section>
+  <div class="stitches" id="stitchBox">
+    <button class="stitch-minus" id="stMinus" aria-label="Take one stitch off">−</button>
+    <button class="stitch-plus" id="stPlus"><b id="stCount">0</b><span id="stLabel"></span></button>
+  </div>
 
-  <noscript><p>Row Tracker needs JavaScript switched on in your browser.</p></noscript>
-</main>
+  <div class="history" id="history">
+    <span id="historyText">Ready when you are.</span>
+    <button class="link" id="undoBtn" hidden>Undo</button>
+  </div>
 
-<!-- One pop-up sheet, used for Sections, Pattern info and the help text. -->
-<div class="sheet-bg hidden" id="sheetBg">
-  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" tabindex="-1">
-    <h2 id="sheetTitle"></h2>
+  <div class="actions">
+    <button class="btn secondary" id="moveOnBtn" hidden>Reached it, move on</button>
+    <button class="btn secondary" id="nextSectionBtn" hidden></button>
+  </div>
+  <button class="done" id="doneBtn"><span id="doneLabel">Row done</span></button>
+  <div class="lock-row">
+    <label class="switch"><input type="checkbox" id="lockToggle"><span>Lock taps</span></label>
+    <label class="switch"><input type="checkbox" id="wakeToggle"><span>Keep screen on</span></label>
+  </div>
+</section>
+
+<!-- ===================== SHEETS ===================== -->
+<div class="sheet-bg" id="sheetBg" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
     <div id="sheetBody"></div>
-    <button class="btn btn-secondary" id="sheetClose" type="button">Close</button>
+    <button class="btn ghost" id="sheetClose">Close</button>
   </div>
 </div>
 
-<p class="sr-only" id="announce" aria-live="polite"></p>
+<div id="toast" class="toast" hidden></div>
 
 <script type="module" src="./app.js"></script>
 </body>

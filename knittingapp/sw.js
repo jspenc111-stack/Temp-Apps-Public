@@ -1,6 +1,6 @@
 // Service worker: keeps a copy of the app on the phone so it opens without internet.
 // Bump VERSION on every change to the app, so installed copies pick up the new files.
-const VERSION = 'row-tracker-v2';
+const VERSION = 'row-tracker-v3';
 const OURS = 'row-tracker-';                 // every cache this app owns starts with this
 const SHARED = 'row-tracker-shared';         // holds a file shared into the app, until the app opens it
 const SHARED_FILE = './shared-pattern';
@@ -10,6 +10,7 @@ const APP_FILES = [
   './styles.css',
   './app.js',
   './pattern.js',
+  './quick.js',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',

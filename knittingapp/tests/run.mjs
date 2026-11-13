@@ -6,6 +6,7 @@ import { join, relative, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import * as P from '../pattern.js';
+import * as Q from '../quick.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = join(HERE, '..');
@@ -647,7 +648,7 @@ await test('swatch: finished rows, the current row and what is coming', () => {
 // ---------------------------------------------------------------------------
 console.log('\nGood neighbour and privacy scan');
 
-const APP_FILES = ['index.html', 'styles.css', 'app.js', 'pattern.js', 'sw.js', 'manifest.webmanifest'];
+const APP_FILES = ['index.html', 'styles.css', 'app.js', 'pattern.js', 'quick.js', 'sw.js', 'manifest.webmanifest'];
 
 // Run sw.js with pretend browser parts, so we can see what it really does.
 function loadServiceWorker(cacheNames) {
@@ -670,7 +671,7 @@ function loadServiceWorker(cacheNames) {
 await test('sw.js only deletes caches starting with row-tracker-', async () => {
   const sw = loadServiceWorker(['fishbowl-v7', 'tally-counter-v1', 'counter', 'row-tracker-v1', 'row-tracker-v2', 'row-tracker-shared', 'my-row-tracker-v1', 'workbox-precache']);
   await sw.fire('activate');
-  eq(sw.deleted, ['row-tracker-v1']);
+  eq(sw.deleted, ['row-tracker-v1', 'row-tracker-v2']);
   const src = read(APP_DIR, 'sw.js');
   ok(/const VERSION = 'row-tracker-v\d+';/.test(src), 'cache name looks like row-tracker-vN');
 });
@@ -722,20 +723,20 @@ await test('no http URLs to other sites in the app files', () => {
 
 await test('index.html keeps the strict Content Security Policy and has no inline script', () => {
   const html = read(APP_DIR, 'index.html');
-  ok(html.includes(`<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'">`), 'CSP is the one in the spec');
+  ok(html.includes(`<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'">`), 'CSP is the one in the spec');
   const scripts = html.match(/<script\b[^>]*>/g) || [];
   eq(scripts, ['<script type="module" src="./app.js">'], 'only the app script');
   ok(!/\son[a-z]+\s*=/i.test(html), 'no inline event handlers');
   ok(html.includes('viewport-fit=cover'), 'safe-area support');
 });
 
-await test('storage: only the rowtracker. key, plus removing v1\'s old key', () => {
+await test('storage: only the rowtracker. key, plus reading v2 once and removing old keys', () => {
   const src = read(APP_DIR, 'app.js');
-  const keys = [...src.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*'([^']+)';/g)].filter((m) => /KEY$/.test(m[1])).map((m) => m[2]);
-  eq(keys.sort(), ['row-tracker-v2', 'rowtracker.v2']);
+  ok(src.includes("const KEY = 'rowtracker.v3';"), 'the one key');
+  ok(src.includes("const OLD_KEYS = ['rowtracker.v2', 'row-tracker-v2'];"), 'old keys named');
   ok(!/localStorage\.clear|sessionStorage|indexedDB|document\.cookie/.test(src), 'no other storage');
   const uses = [...src.matchAll(/localStorage\.(\w+)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2].trim()})`);
-  eq([...new Set(uses)].sort(), ['getItem(KEY)', 'removeItem(OLD_V1_KEY)', 'setItem(KEY)']);
+  eq([...new Set(uses)].sort(), ["getItem('rowtracker.v2')", 'getItem(KEY)', 'removeItem(k)', 'setItem(KEY)']);
 });
 
 await test('manifest: name, colours, relative paths and the three icons', () => {
@@ -745,6 +746,100 @@ await test('manifest: name, colours, relative paths and the three icons', () => 
   for (const icon of m.icons) ok(existsSync(join(APP_DIR, icon.src)), `${icon.src} exists`);
   eq(m.icons[2].purpose, 'maskable');
 });
+
+
+// ---------------------------------------------------------------------------
+// quick.js: projects set up by hand
+// ---------------------------------------------------------------------------
+const sock = () => Q.newQuick({ name: 'Socks', sections: [
+  { name: 'Cuff', target: 12, repeat: 2 },
+  { name: 'Leg', target: 0, reminders: [{ text: 'decrease', every: 6 }] },
+  { name: 'Foot', target: 30, repeat: 4, reminders: [{ text: 'start toe', at: 25 }, { text: 'colour change', every: 10 }] },
+] });
+
+await test('quick: a new project cleans its parts and starts at row 1 of the first part', () => {
+  const q = sock();
+  eq(q.sections.map((s) => s.name), ['Cuff', 'Leg', 'Foot']);
+  eq([q.pos.section, Q.nextRow(q), q.done], [0, 1, false]);
+  const bare = Q.newQuick({});
+  eq([bare.name, bare.sections.length, bare.sections[0].name, bare.sections[0].target], ['Untitled project', 1, 'Rows', 0]);
+  const messy = Q.newQuick({ name: '  Hat  ', craft: 'crochet', sections: [{ name: '', target: '7', repeat: 'x', reminders: [{ text: ' ', every: 3 }, { text: 'inc', every: 0, at: 0 }, { text: 'inc', every: 2 }] }] });
+  eq([messy.name, messy.craft, messy.sections[0].name, messy.sections[0].target, messy.sections[0].repeat, messy.sections[0].reminders], ['Hat', 'crochet', 'Part 1', 7, 0, [{ text: 'inc', every: 2 }]]);
+});
+
+await test('quick: rows count up, the repeat pill is right, and the target ends the part', () => {
+  const q = sock();
+  for (let i = 0; i < 5; i++) Q.rowDone(q, 1000 + i);
+  eq(Q.nextRow(q), 6);
+  eq(Q.repeatInfo(q), { rowInRepeat: 2, repeatNumber: 3, length: 2, repeatsPlanned: 6 });
+  for (let i = 0; i < 7; i++) Q.rowDone(q, 2000 + i);
+  ok(Q.sectionComplete(q), 'cuff complete at 12');
+  eq(q.history[q.history.length - 1].label, 'Row 12 done');
+  Q.rowDone(q, 3000);                       // moves to the next part
+  eq([q.pos.section, Q.nextRow(q), q.history[q.history.length - 1].label], [1, 1, 'Cuff finished']);
+});
+
+await test('quick: reminders fire on the right rows and the next one is announced', () => {
+  const q = sock();
+  Q.jumpToSection(q, 1);
+  eq(Q.dueReminders(q), []);
+  eq(Q.upcomingReminder(q), { row: 6, inRows: 5, text: 'decrease' });
+  for (let i = 0; i < 5; i++) Q.rowDone(q);
+  eq(Q.dueReminders(q), [{ text: 'decrease', every: 6 }]);
+  Q.jumpToSection(q, 2);
+  Q.setRow(q, 24);
+  eq(Q.dueReminders(q).map((r) => r.text), ['start toe']);
+  Q.setRow(q, 29);
+  eq(Q.dueReminders(q).map((r) => r.text), ['colour change']);
+  eq(Q.upcomingReminder(q), null, 'nothing after the target');
+});
+
+await test('quick: undo puts back exactly what the last tap changed, including a part change', () => {
+  const q = sock();
+  for (let i = 0; i < 12; i++) Q.rowDone(q);
+  Q.rowDone(q);
+  eq(q.pos, { section: 1, row: 0 });
+  Q.undo(q);
+  eq(q.pos, { section: 0, row: 12 });
+  Q.undo(q);
+  eq(q.pos, { section: 0, row: 11 });
+  ok(Q.canUndo(q));
+  while (Q.canUndo(q)) Q.undo(q);
+  eq(q.pos, { section: 0, row: 0 });
+  eq(Q.undo(q).pos, { section: 0, row: 0 }, 'undo with nothing to undo changes nothing');
+});
+
+await test('quick: the last part finishes the project, and undo brings it back', () => {
+  const q = Q.newQuick({ name: 'Swatch', sections: [{ name: 'Only', target: 2 }] });
+  Q.rowDone(q); Q.rowDone(q);
+  ok(!q.done && Q.sectionComplete(q), 'target met but not finished until confirmed');
+  Q.rowDone(q);
+  ok(q.done, 'finished');
+  eq(Q.progress(q).fraction, 1);
+  Q.undo(q);
+  ok(!q.done, 'back from finished');
+  const open = Q.newQuick({ name: 'Open', sections: [{ name: 'Body' }] });
+  for (let i = 0; i < 40; i++) Q.rowDone(open);
+  ok(Q.progress(open).fraction <= 0.99, 'open-ended parts never show 100%');
+  Q.nextSection(open);
+  ok(open.done, 'moving on from the last open part finishes it');
+});
+
+await test('quick: restoreQuick repairs saved data and keeps a sensible history', () => {
+  const q = sock();
+  for (let i = 0; i < 40; i++) Q.rowDone(q, i);
+  const back = Q.restoreQuick(JSON.parse(JSON.stringify(q)));
+  eq([back.pos, back.history.length], [q.pos, Q.MAX_HISTORY]);
+  eq(Q.restoreQuick(null), null);
+  const bad = Q.restoreQuick({ name: 'X', sections: [{ name: 'A', target: 3 }], pos: { section: 9, row: -1 }, history: [{ t: 'x' }, { t: 1, label: 'ok', prev: { section: 0, row: 2 } }], done: true });
+  eq([bad.pos, bad.history.length, bad.done], [{ section: 0, row: 0 }, 1, true]);
+});
+
+await test('quick: ago() reads naturally', () => {
+  const now = 10_000_000;
+  eq([Q.ago(now - 10_000, now), Q.ago(now - 180_000, now), Q.ago(now - 7_200_000, now), Q.ago(now - 86_400_000, now), Q.ago(now - 3 * 86_400_000, now)], ['just now', '3 min ago', '2 hr ago', 'yesterday', '3 days ago']);
+});
+
 
 // ---------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failures.length} failed`);
