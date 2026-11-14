@@ -1,8 +1,8 @@
 # Row Tracker — Build Spec
 
-Version 2 · October 9, 2026
+Version 3 · November 13, 2026
 
-**Version 2.** Row Tracker is now two parts. A **Pattern Converter** runs in Claude and turns a pattern PDF into a pattern file. The **Row Tracker** phone app opens that file and keeps your place. The app no longer reads PDFs itself. v2 replaces v1 in the `knittingapp/` folder of the `Temp-Apps-Public` repo, at the same web address.
+**Version 3** is a redesign from scratch around how knitters actually use a counter, based on research into the apps they use and complain about (see "What changes in v3"). It keeps v2's pattern-file format and Pattern Converter unchanged. The app lives in the `knittingapp/` folder of the `Temp-Apps-Public` repo, at the same web address.
 
 ## How it fits together
 
@@ -18,15 +18,31 @@ ROW TRACKER APP ON THE PHONE (works offline)
 
 Only the converter needs AI and the internet. Everything on the phone works offline and never sends the pattern anywhere.
 
-## What changes from v1
+## What changes in v3
 
-v1 guessed at patterns with text rules and failed on real ones, which have sizes, measurements and repeats that change each time. v2 lets Claude do the reading and gives the app a strict file shape to follow.
+**Research.** Reviews and forum threads about row-counter apps (knitCompanion, YarnBuddy, My Row Counter, Knit Row Counter, Knitting Counter, Easy Knitty and others) repeat the same complaints:
 
-- **Reading moves out of the app.** Claude reads the PDF, including photos and charts, and writes a pattern file. The app's text rules and PDF reader are removed.
-- **A real data model.** It covers multiple sizes, "work until it measures X cm" steps, multi-part steps with checklists, needle changes, sections worked twice, and flags where Claude was unsure.
-- **Fully self-contained.** With no PDF library and no CDN, the app loads nothing from other websites.
-- **Testable code.** Pattern logic lives in its own file, with automated tests.
-- **New project files.** `CLAUDE.md` (house rules for Claude Code) and `converter/SKILL.md` (the converter's instructions).
+- Losing your place mid-row, and not being sure whether you already pressed the button ("did I press that?").
+- Accidental taps: swipe-to-subtract gestures, and buttons that are easy to hit while handling needles. Physical counters have a lock switch for this reason.
+- Having to unlock the phone every row.
+- Only one project at a time, when most knitters have several on the go.
+- A pattern is structure, not a number: row 47 overall, row 3 of a 12-row repeat, repeat 4, while decreasing every 6th row. Plain tally counters can't say that, so people run three counters and a sticky note.
+- Sounds that interrupt podcasts.
+
+**Design responses, each one a feature:**
+
+| Complaint | v3 answer |
+| --- | --- |
+| Did I press that? | A history line under the button ("Row 12 done · just now") and one-tap Undo that puts back exactly what the last tap changed |
+| Accidental taps | One huge button at the bottom, no gestures, and a "Lock taps" switch |
+| Unlocking the phone each row | "Keep screen on" switch, remembered per phone |
+| One project at a time | A projects list; each remembers its place; sorted by last worked on |
+| Structure, not a number | Quick setup: parts with row targets, rows-per-repeat, and reminders "every N rows" or "at row N". The screen says "Row 6 of 12 · repeat 3 of 6 · row 2 of 2" and "decrease in 3 rows" |
+| Sounds | None. Optional haptic buzz only |
+
+**Also new:** rows and reminders can be set by hand ("I'm actually on row 30"), a backup/restore of all projects as text, keyboard shortcuts (space = row done) for a foot pedal, and v2 saved data is migrated into a project on first run.
+
+**Unchanged:** the pattern-file format, the converter skill, `pattern.js`, the yarn colours and swatch, offline support, the share target, and the privacy rules.
 
 ## Data model: the pattern file
 
@@ -243,112 +259,59 @@ Turn a knitting or crochet pattern into ONE JSON file that the Row Tracker app o
 
 ## Tech constraints and files
 
-The app is a static, offline-capable PWA in the `knittingapp/` folder of the public repo `jspenc111-stack/Temp-Apps-Public`, next to Fishbowl and Counter. GitHub Pages already publishes the whole repo, so the live address stays **https://jspenc111-stack.github.io/Temp-Apps-Public/knittingapp/** and the copy already installed on the owner's phone updates itself. All paths in this spec are inside `knittingapp/` unless they start with the repo root.
+The app is a static, offline-capable PWA in `knittingapp/` of the public repo `jspenc111-stack/Temp-Apps-Public`, next to Fishbowl and Counter. GitHub Pages publishes the whole repo, so the live address stays **https://jspenc111-stack.github.io/Temp-Apps-Public/knittingapp/**.
 
 ```text
 knittingapp/
-├─ index.html                replaces v1's single-file app
+├─ index.html                all screens, one page
 ├─ styles.css
-├─ app.js                    screens, buttons, saving
-├─ pattern.js                check, resolve and expand pattern files (no screen code)
-├─ sw.js                     offline helper (service worker)
+├─ app.js                    screens, buttons, saving, migration from v2
+├─ quick.js                  quick projects: parts, repeats, reminders, undo (no screen code)
+├─ pattern.js                pattern files: validate, resolve, movement (no screen code)
+├─ sw.js                     offline helper (service worker), cache row-tracker-v3
 ├─ manifest.webmanifest
-├─ icon-192.png, icon-512.png, icon-512-maskable.png   keep v1's icons
-├─ converter/
-│  ├─ SKILL.md               Pattern Converter instructions
-│  └─ pattern.schema.json    the data model as a JSON Schema
-├─ tests/
-│  ├─ run.mjs                plain Node, no packages (same style as Fishbowl's tests)
-│  └─ fixtures/              invented test patterns only
-├─ SPEC.md                   this document
-├─ CLAUDE.md                 rules for this app
-└─ README.md
+├─ icon-192.png, icon-512.png, icon-512-maskable.png
+├─ converter/SKILL.md, converter/pattern.schema.json
+├─ tests/run.mjs, tests/fixtures/
+├─ SPEC.md, CLAUDE.md, README.md
 ```
 
-**Repo-level changes** (outside `knittingapp/`):
-
-- `.github/workflows/test.yml` and `pages.yml`: add a step that runs `node knittingapp/tests/run.mjs`, next to Fishbowl's. A failing Row Tracker test then blocks the deploy too.
-- `.github/pull_request_template.md`: change the tests line to "Tests pass for the app I changed".
-- `.claude/settings.json`: allow `Bash(node knittingapp/tests/run.mjs)`.
-- Root `CLAUDE.md`: add one line saying Row Tracker's rules are in `knittingapp/CLAUDE.md`.
-
-**The app**
-
-- **Code:** plain HTML, CSS and JavaScript as ES modules. No frameworks, libraries, CDN or web fonts.
-- **Paths:** relative (`./`).
-- **pattern.js** has no screen code, so tests can run it in Node. It provides:
-  - `validate(data)`: returns ok, or a list of plain-English problems like "Step 4 in Yoke has no text".
-  - `resolve(pattern, size)`: returns the flat list of steps for one size (see Tracker behaviour).
-  - `estimateRows(length, gauge)`: rounds `length × rows ÷ over` to a whole number.
-- **JSON Schema:** `converter/pattern.schema.json` describes the data model formally. `validate()` follows the same rules, and CLAUDE.md keeps the two in step.
-- **Manifest:** name "Row Tracker", `display: standalone`, `start_url` and `scope` `./`, theme `#9C3F5D`, background `#DCD3C3`, the three icons.
-- **Share target (nice to have, build last):** add a `share_target` to the manifest so a `.json` file can be shared straight into Row Tracker from Android's share menu. The service worker receives it and hands it to the import screen.
-- **Service worker:** pre-cache the app files, serve from cache first, refresh in the background. The cache is named `row-tracker-v2`, and the name is bumped on every change. **When clearing old caches, delete only names starting with `row-tracker-`.** Every app in this repo shares one web address, so deleting "every other cache" (as v1 did) wipes Fishbowl's and Counter's offline copies.
-- **Storage:** `localStorage` key `rowtracker.v2`, holding the pattern file, the chosen size and the position. Every read and write sits in try/catch; unreadable data means "start fresh". On first run, remove v1's old key `row-tracker-v2` and touch no other keys.
-- **Limits:** pattern files up to 2 MB. Larger files get a friendly error.
+- **Code:** plain HTML, CSS and JavaScript modules. No frameworks, libraries, CDN or web fonts. Paths are relative.
+- **Logic files have no screen code**, so Node tests run them: `quick.js` for quick projects, `pattern.js` for pattern files.
+- **Storage:** one `localStorage` key, `rowtracker.v3`: `{ v: 3, projects: [...], activeId, settings: { haptics, wake } }`. On first run, `rowtracker.v2` is read once and turned into a project, then both old keys are removed. Every read and write is in try/catch; unreadable data means "start fresh"; every saved project is repaired on load and dropped if it can't be.
+- **A project** is either `kind: "quick"` (name, craft, sections, pos, history, stitch, done) or `kind: "pattern"` (name, pattern, size, progress), plus `id`, `updated` and `notes`.
+- **Service worker:** pre-caches the app files, serves from cache first, refreshes in the background, and deletes only caches named `row-tracker-*`.
+- **Limits:** pattern files up to 2 MB, 40 parts and 20 reminders per quick project, 30 history entries, notes up to 5,000 characters.
 
 ## Screens and user flow
 
-The app opens on the Tracker if a pattern is saved, otherwise on Add a pattern. It holds one pattern at a time.
+The app opens on the project you last worked on, or the projects list if there is none.
 
-1. **Add a pattern**
-   - "Open pattern file" button: a file picker for `.json` files, usually from Downloads.
-   - "Paste pattern file": a text box for copied JSON, plus an "Open" button.
-   - "How do I make a pattern file?": a short help sheet. It says: share your PDF with Claude, ask it to convert the pattern for Row Tracker, download the file, then open it here.
-   - If a PDF is picked: "This is a PDF. Convert it with the Pattern Converter in Claude first, then open the file it gives you."
-   - If the file fails checks: "This file can't be opened" plus up to 5 problems in plain words.
-   - A small "No pattern? Just count rows" link for the plain counter.
-2. **Pick your size** (only when `sizes` has more than one): the title and designer, then one big button per size.
-3. **Check it**
-   - Title, size, and a summary like "4 sections, 112 rows, 3 measure steps".
-   - A highlighted box listing `reviewNotes` and every flagged step, if any.
-   - One collapsible card per section (colour dot, name, row count). Each step shows its label, text, stitch count, needle change, and a ⚠ with the flag text when flagged. Repeated sections show once, with "× 2".
-   - Buttons: "Start knitting" and "Choose a different file".
-4. **Tracker:** the main screen (next sections). Footer links: "Keep screen on", "Pattern info", "Start over".
-5. **Sections sheet:** opened from the progress bar or a "Sections" button. Lists every section with its progress and a tick when done. Tapping one jumps to its first step.
-6. **Pattern info sheet:** materials, needles, gauge, notes, designer and source, the current size with "Change size", and "Open a different pattern".
+1. **Projects** (home): one card per project, most recently worked first, with its name, where you are ("Cuff · row 6 of 12"), when you last touched it, and a thin progress bar. "New project" and a settings button (haptics, backup, restore).
+2. **New project:** three choices. *Quick setup*, *Open a pattern file*, *Just count rows* (a quick project with one open-ended part).
+3. **Quick setup:** project name, knit or crochet, and the parts in working order. Each part has a name, a row count (blank means "until it measures"), rows in one repeat, and reminders: text plus "every N" or "at row N". The same form edits an existing project later.
+4. **Pattern file:** open a `.json` file or paste its text, then pick a size (if the file has several) and check the parts and rows before starting. Unchanged from v2.
+5. **Tracking:** the knitting screen, below.
+6. **Sheets** (slide up from the bottom): Parts (jump to one), the project menu (set the row by hand, edit parts, pattern info, change size, notes, rename, haptics, start over, delete), notes, and settings.
 
-**Replacing a pattern** asks first: "This replaces your current pattern and its progress." **Changing size** asks first, then restarts from the beginning of the current section, because the steps differ by size.
-
-**Plain counter mode** (no pattern): a row number, the stitch counter, Back and Row done, and a single-colour swatch.
+Replacing nothing: adding a project never touches another one. Deleting asks first.
 
 ## Tracker behaviour
 
-The app turns the pattern file into one flat list of steps for the chosen size, then moves through it one tap at a time and saves after every tap.
+**Layout, top to bottom:** back to projects · project name and a part pill ("Cuff · 1 of 2", tap for the parts sheet) · menu · the knitted swatch and a progress bar split by part · a reminder banner when one is due · the row card · the optional stitch counter · the history line with Undo · "Move on" buttons when they apply · the big "Row done" button · the Lock taps and Keep screen on switches.
 
-**Resolving** (`resolve(pattern, size)` in pattern.js), in this order:
+**Quick projects** (`quick.js`):
 
-1. Drop steps whose `sizes` don't include the chosen size.
-2. Replace every per-size value with the chosen size's value.
-3. Repeat sections with `repeat` > 1, named "Sleeve (1 of 2)", "Sleeve (2 of 2)".
-4. Split rows with `count` > 1 into single rows that know "1 of 3", "2 of 3" and so on.
-5. Carry forward the stitches on the needle (from the last `stitchesAfter`) and the current needle (from the last `needle`). Each entry then knows its starting stitch count and needle.
-6. Number rows within each section copy ("Round 14 of this section").
+- The row card shows "Row 6 of 12" (or "Round" for crochet), a repeat pill ("Repeat 3 of 6 · row 2 of 2") when the part has a repeat, "7 to go in Cuff", and the next reminder ("decrease in 3 rows (row 12)").
+- **Reminders** fire for the row about to be worked: "every 6" fires on rows 6, 12, 18…; "at row 25" fires once. They show as a banner with "Got it" and are listed in the card.
+- **Row done** finishes the row. When a part's row count is reached, the card says "Cuff done" and the button becomes "Start Leg" (or "Finish project"). Open-ended parts show "Move on to Leg" at all times.
+- **Undo** puts back exactly what the last tap changed, including a move to the next part or finishing. The last 30 taps are kept.
+- **Set the row by hand** and **Edit parts** are in the menu. Editing parts keeps your place where it still fits.
+- The progress bar shows a percentage only when every part has a row count; otherwise "Part 2 of 2". Open-ended parts never show 100%.
 
-**What the Tracker shows, top to bottom**
+**Pattern projects** (`pattern.js`): as in v2. Row, measure and action steps; "Reached 22 cm, move on" on measure steps; checklists; Back instead of Undo; Change size restarts the current part.
 
-- Title and a "Sections" button.
-- Section line: colour dot, "Sleeve (1 of 2)", "Section 3 of 5", the needle ("3 mm needle") and stitches on it ("39 sts").
-- The knitted swatch and progress bar (next section).
-- The step card, which depends on the step type:
-  - **Row:** big label ("Round 2", or "Round 14" with no label), pills for "2 of 3", "Yoke pattern · pass 2 of 3" and RS/WS, then the instruction in large text and "Ends with 126 sts" when known.
-  - **Measure:** big "Until it measures 22 cm", the instruction, a round counter ("18 rounds so far") and "About 66 rounds at your gauge" when the file has a gauge.
-  - **Action:** big label (or "Step"), the instruction, and the checklist as tick boxes. Ticks are saved. "Step done" works even with boxes unticked.
-  - **Flagged step:** a ⚠ line with the flag text, e.g. "Check this against the PDF".
-- Stitch counter (row and measure steps): a big "+1" button showing "12 / 126" and a small "−". The target is the number of stitches on the needle at the start of the row. At the target it says "All stitches worked, tap Row done". It resets to 0 on every move.
-- Buttons: "Back" and "Row done" ("Round done" for rounds, "Step done" for actions). Measure steps add "Reached 22 cm, move on".
-- Up next: the next instruction, or "Next section, Body: …".
-
-**Moving**
-
-- **Row done:** go to the next entry. After the last entry, show "Finished!" with a short well-done message.
-- **Measure steps:** "Round done" adds 1 to that step's count and stays put. "Reached it, move on" goes to the next entry.
-- **Back:** on a measure step with a count above 0, subtract 1. Otherwise go to the previous entry, keeping any measure count and ticks it already had. From "Finished!", return to the last entry.
-- **Sections sheet:** jumps to a section copy's first entry.
-
-**Saving.** Store the pattern file, the size, the current entry, measure counts and checklist ticks per entry, the stitch count and the finished flag. Closing and reopening the app, even offline, returns to exactly the same place.
-
-**Nice touches.** A short vibration on each stitch (8 ms) and row (25 ms) where supported. "Keep screen on" uses the Screen Wake Lock API, and says plainly when the phone doesn't support it.
+**Both:** a short buzz on each row (25 ms) and stitch (8 ms) when haptics are on; Lock taps makes the big button and the stitch button do nothing (a toast says why); Keep screen on uses the Screen Wake Lock API and is remembered; space or enter on a keyboard counts a row, backspace undoes. Every tap saves.
 
 ## Progress visual
 
@@ -412,7 +375,7 @@ Claude Code reads the repo's root `CLAUDE.md` first, then this one whenever it w
 ```markdown
 # CLAUDE.md — Row Tracker (knittingapp/)
 
-A knitting and crochet row tracker. The Pattern Converter (a Claude skill in `converter/`) turns a pattern PDF into a pattern file (JSON). The app opens that file and tracks the knitter's place, offline. **`knittingapp/SPEC.md` is the source of truth for behaviour.** The root CLAUDE.md's rules 1 (public repo), 2 (branch + PR) and 9 (small PRs) apply here too.
+A knitting and crochet row tracker with many projects, quick setup (parts, repeats, reminders) and pattern files. The Pattern Converter (a Claude skill in `converter/`) turns a pattern PDF into a pattern file (JSON). The app opens that file and tracks the knitter's place, offline. **`knittingapp/SPEC.md` is the source of truth for behaviour.** The root CLAUDE.md's rules 1 (public repo), 2 (branch + PR) and 9 (small PRs) apply here too.
 
 Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/knittingapp/
 
@@ -422,7 +385,8 @@ Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/knittingapp/
 
 ## Layout (all in `knittingapp/`)
 - `index.html`, `styles.css`, `app.js`: the app (plain HTML/CSS/JS modules, no build step, no npm packages).
-- `pattern.js`: validate, resolve and expand pattern files, plus the movement rules. No DOM code, so Node tests can run it.
+- `quick.js`: quick projects (parts, repeats, reminders, undo). No DOM code, so Node tests can run it.
+- `pattern.js`: validate, resolve and expand pattern files, plus the movement rules. No DOM code either.
 - `converter/SKILL.md` + `converter/pattern.schema.json`: the converter skill and the data model.
 - `tests/run.mjs`: tests. `tests/fixtures/`: invented patterns only.
 
@@ -444,32 +408,13 @@ Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/knittingapp/
 
 ## Tests, deployment and acceptance checklist
 
-Claude Code builds on a branch in `Temp-Apps-Public`, proves it with tests, and opens a pull request. Pages is already on for this repo, so merging is the only step left for the owner.
+**Automated** (`node knittingapp/tests/run.mjs`, 57 tests): everything from v2 for `pattern.js`, plus `quick.js`: cleaning messy setup input, row counting and repeat maths, reminders firing on the right rows and the next one announced, undo across a part change and across finishing, open-ended parts, repairing saved data, and the "x min ago" wording. The scans still check: no outside addresses, strict CSP, only the `rowtracker.` key, `sw.js` deletes only `row-tracker-*` caches, no PDFs, no pattern files outside fixtures, no `innerHTML`.
 
-**Automated tests** (`node knittingapp/tests/run.mjs`, also run by `test.yml` and before every deploy by `pages.yml`). The movement rules (next, back, measure counts, finished) live in `pattern.js` too, so they can be tested without a screen.
+**Checked in a phone-sized headless browser before the PR:** quick setup with two parts and a reminder; counting, undo, part change, reminder banner, lock, reload keeps the place; a pattern file through size and review; two projects on the home screen; the app opens offline; light and dark mode; no requests to other websites.
 
-- [ ] **Fixtures:** `sunny-yoke-tee.json` (the example above), plus invented `garter-scarf.json` (flat, one size, RS/WS, `count`) and `crochet-ball.json` (crochet rounds, a stitch count on every round). Add broken files: wrong `format`, no title, a per-size value missing a size, an unknown step type, a measure step with no `length`, and a file over 2 MB (generate this one in the test rather than committing it).
-- [ ] **validate():** accepts the three good fixtures and rejects each broken one with a plain-English reason.
-- [ ] **resolve(), Sunny Yoke Tee:** S has 2 yoke passes and M and L have 3. Round 2 counts are S 108/126, M 117/136/158, L 126/144/162. The body starts at 80, 96 or 100 sts. "Sleeve (1 of 2)" and "Sleeve (2 of 2)" each start at 31, 39 or 39 sts. "Rounds 3–5" becomes 3 entries. The body rib carries the 3 mm needle.
-- [ ] **estimateRows():** 22 cm → 66, 4 cm → 12, 2 cm → 6 at 30 rows per 10 cm.
-- [ ] **Movement:** Row done, Back (including back into a measure step), Round done and Reached it on measure steps, Finished and back again. Saved state restores to the same entry, counts and ticks.
-- [ ] **Good neighbour and privacy scan:** `sw.js` only deletes caches starting with `row-tracker-`; no `.pdf` anywhere in `knittingapp/`; no pattern file outside `tests/fixtures/`; no `innerHTML` in `app.js`; no `http` URLs to other sites in the app files.
-- [ ] **Fishbowl's tests still pass** (`node fishbowlapp/tests/run.mjs`).
+**To check on the Pixel after merging:** open Row Tracker once online (it updates itself and your v2 pattern appears as a project), try Keep screen on, and convert one of your own patterns in Claude.
 
-**Final checks** (Claude Code does the first five in a phone-sized headless browser before opening the PR; the owner does the last two on the Pixel after merging)
+**Deployment:** branch `claude/row-tracker-v3` → PR into `main` → the owner merges in the GitHub app. Pages is already on.
 
-- [ ] Only the app's own files load; there are no requests to other websites.
-- [ ] Opening the yoke tee fixture shows Pick your size, then Check it with the review note highlighted.
-- [ ] Picking a PDF shows the "convert it in Claude first" message; a broken file lists its problems.
-- [ ] With the network switched off after the first visit, the app opens on the saved step.
-- [ ] Screens look right at 390 px wide, in light and dark mode.
-- [ ] Open the installed Row Tracker once while online so it picks up v2, then check the name and icon.
-- [ ] Convert one real pattern in Claude, download the file, and open it in the app. Never upload it to GitHub.
+**Out of scope:** AI inside the app, syncing between devices, voice control, and the same cache issue in Fishbowl and Counter.
 
-**Deployment**
-
-1. **Claude Code:** work on the branch `claude/row-tracker-v2` in `jspenc111-stack/Temp-Apps-Public`. This spec is already there as `knittingapp/SPEC.md`. Replace v1's files and keep its icons.
-2. **Claude Code:** run both apps' tests, push, and open a PR into `main` titled "Row Tracker v2: pattern files and converter". In the PR template, tick "Nothing. Just merge." Don't merge it.
-3. **The owner, in the GitHub app:** open the PR → Merge. The new version goes live at the same address about 2 minutes later.
-
-**Out of scope for now:** AI inside the app, keeping the PDF in the app, more than one pattern at a time, syncing between devices, and fixing the same cache issue in Fishbowl and Counter (a separate small PR).

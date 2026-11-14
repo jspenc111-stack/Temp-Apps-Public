@@ -1,6 +1,6 @@
 # CLAUDE.md — Row Tracker (knittingapp/)
 
-A knitting and crochet row tracker. The Pattern Converter (a Claude skill in `converter/`) turns a pattern PDF into a pattern file (JSON). The app opens that file and tracks the knitter's place, offline. **`knittingapp/SPEC.md` is the source of truth for behaviour.** The root CLAUDE.md's rules 1 (public repo), 2 (branch + PR) and 9 (small PRs) apply here too.
+A knitting and crochet row tracker with many projects, quick setup (parts, repeats, reminders) and pattern files. The Pattern Converter (a Claude skill in `converter/`) turns a pattern PDF into a pattern file (JSON). The app opens that file and tracks the knitter's place, offline. **`knittingapp/SPEC.md` is the source of truth for behaviour.** The root CLAUDE.md's rules 1 (public repo), 2 (branch + PR) and 9 (small PRs) apply here too.
 
 Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/knittingapp/
 
@@ -10,7 +10,8 @@ Live app: https://jspenc111-stack.github.io/Temp-Apps-Public/knittingapp/
 
 ## Layout (all in `knittingapp/`)
 - `index.html`, `styles.css`, `app.js`: the app (plain HTML/CSS/JS modules, no build step, no npm packages).
-- `pattern.js`: validate, resolve and expand pattern files, plus the movement rules. No DOM code, so Node tests can run it.
+- `quick.js`: quick projects (parts, repeats, reminders, undo). No DOM code, so Node tests can run it.
+- `pattern.js`: validate, resolve and expand pattern files, plus the movement rules. No DOM code either.
 - `converter/SKILL.md` + `converter/pattern.schema.json`: the converter skill and the data model.
 - `tests/run.mjs`: tests. `tests/fixtures/`: invented patterns only.
 
